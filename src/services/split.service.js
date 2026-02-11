@@ -8,163 +8,139 @@ import pLimit from "p-limit";
 import path from "path";
 
 export const processPdfSplit = async (pdfPath, tenant) => {
+    const startTime = Date.now();
     const tmpDir = path.join("tmp", "img");
     const folderId = TENANT_FOLDERS[tenant];
-    if (!folderId) throw new Error(`Tenant no registrado: ${tenant}`);
 
-    console.log("\n===============================");
-    console.log("JOB START");
-    console.log("TENANT:", tenant);
-    console.log("PDF PATH:", pdfPath);
-    console.log("===============================\n");
+    console.log(`[INFO] [SYSTEM_START] Processing request for Tenant: [${tenant.toUpperCase()}]`);
+    console.log(`[INFO] [FILE_PATH] Source: ${pdfPath}`);
+
+    if (!folderId) {
+        console.error(`[ERROR] [CONFIG_FAULT] Tenant '${tenant}' is not registered in TENANT_FOLDERS.`);
+        throw new Error(`Tenant no registrado: ${tenant}`);
+    }
 
     try {
-        // STEP 0: limpiar tmp
-        console.log("[STEP 0] Limpiando tmp...");
+        // STEP 0: Limpieza de directorios
         await fs.emptyDir(tmpDir);
-        console.log("[OK] Tmp limpio");
+        console.log("[INFO] [CLEANUP] Temporary directories initialized.");
 
-        // STEP 1: render PDF → imágenes
-        console.log("[STEP 1] Renderizando PDF a imágenes...");
+        // STEP 1: Renderizado de PDF
+        const renderStart = Date.now();
         await renderPdfToImages(pdfPath, tmpDir);
+        console.log(`[INFO] [RENDER] PDF-to-Image conversion completed in ${((Date.now() - renderStart) / 1000).toFixed(2)}s`);
 
-        // STEP 2: leer archivos
+        // STEP 2: Validación de archivos
         const files = (await fs.readdir(tmpDir)).sort();
-        console.log(`[STEP 2] Archivos generados: ${files.join(", ")}`);
-        if (!files.length) throw new Error("No se generaron imágenes desde el PDF");
+        if (!files.length) throw new Error("No images were generated from the source PDF.");
+        console.log(`[INFO] [ANALYSIS] Detected ${files.length} pages for processing.`);
 
-        // STEP 3: leer QR
-        console.log("[STEP 3] Leyendo QR del resto de páginas...");
+        // STEP 3: Reconocimiento de QR
+        console.log("[INFO] [QR_SCAN] Initializing barcode recognition...");
         const limit = pLimit(4);
-
-        // Leer carátula (primera página)
         const firstPagePath = path.join(tmpDir, files[0]);
-        const idCaratula = await readQR(firstPagePath);
-        if (!idCaratula) throw new Error("No se detectó QR en la carátula");
-        console.log(`[OK] Carátula QR detectada: ${idCaratula}`);
 
-        // Leer QR del resto de páginas
-        const restFiles = files.slice(1);
+        let idCaratula = await readQR(firstPagePath);
+        if (!idCaratula) throw new Error("Metadata failure: Main QR ID not found on cover page.");
+        idCaratula = idCaratula.replace(/^"+|"+$/g, "").trim();
+        console.log(`[INFO] [METADATA] Cover ID identified as: ${idCaratula}`);
 
         const qrResults = await Promise.all(
-            restFiles.map(file =>
-                limit(async () => {
-                    const imgPath = path.join(tmpDir, file);
-                    let qrData = null;
-                    try {
-                        qrData = await readQR(imgPath);
-                        if (qrData) {
-                            // quitar comillas dobles al inicio y final si existen
-                            qrData = qrData.replace(/^"+|"+$/g, "").trim();
-                            console.log(`   [QR DETECTADO] ${file}: "${qrData}"`);
-                        } else {
-                            console.log(`   [NO QR] ${file}`);
-                        }
-                    } catch (err) {
-                        console.error(`   [ERROR QR] ${file}:`, err);
+            files.slice(1).map(file => limit(async () => {
+                const imgPath = path.join(tmpDir, file);
+                const pageIdx = parseInt(file.match(/\d+/)[0]) - 1;
+                let qrData = null;
+                try {
+                    qrData = await readQR(imgPath);
+                    if (qrData) {
+                        qrData = qrData.replace(/^"+|"+$/g, "").trim();
+                        console.log(`[DEBUG] [QR_FOUND] Page ${pageIdx + 1}: ${qrData}`);
                     }
-                    return { file, qrData };
-                })
-            )
+                } catch (err) {
+                    console.warn(`[WARN] [QR_READ_FAIL] Page ${pageIdx + 1}: ${err.message}`);
+                }
+                return { file, qrData, pageIdx };
+            }))
         );
 
-        // STEP 4: armar bloques por separador
-        console.log("[STEP 4] Armando bloques por separador...");
+        // STEP 4: Segmentación lógica
+        console.log("[INFO] [SEGMENTATION] Organizing document blocks based on separators...");
         const bloques = [];
         let bloqueActual = [];
         let codigoActual = null;
 
-        for (const { file, qrData } of qrResults) {
+        for (const { file, qrData, pageIdx } of qrResults) {
             if (qrData && qrData.startsWith("SEP|")) {
                 const nuevoCodigo = qrData.split("|")[1]?.trim() || "UNKNOWN";
-
-                // cerrar bloque actual si tiene páginas
                 if (bloqueActual.length) {
                     bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual || "UNKNOWN" });
-                    console.log(`[INFO] Bloque cerrado con ${bloqueActual.length} páginas, código: ${codigoActual || "UNKNOWN"}`);
                 }
-
-                // iniciar nuevo bloque con la página del separador
-                bloqueActual = [file];
+                bloqueActual = [{ file, pageIdx }];
                 codigoActual = nuevoCodigo;
                 continue;
             }
-
-            // páginas normales
-            bloqueActual.push(file);
+            bloqueActual.push({ file, pageIdx });
         }
 
-        // último bloque
         if (bloqueActual.length) {
             bloques.push({ files: bloqueActual, codigoCategoria: codigoActual || "UNKNOWN" });
-            console.log(`[INFO] Último bloque cerrado con ${bloqueActual.length} páginas, código: ${codigoActual || "UNKNOWN"}`);
         }
+        console.log(`[INFO] [SEGMENTATION_COMPLETE] Total segments identified: ${bloques.length}`);
 
-        console.log(`[OK] Total bloques detectados: ${bloques.length}`);
+        // STEP 5: Generación de PDF y Carga masiva (Batch Copying)
+        console.log("[INFO] [OUTPUT_GEN] Initializing concurrent upload and batch copying...");
+        const pdfBuffer = await fs.readFile(pdfPath);
+        const originalPdf = await PDFDocument.load(pdfBuffer);
+        const uploadTasks = [];
 
-        // STEP 5: generar PDFs
-        console.log("[STEP 5] Generando PDFs...");
-        const originalPdf = await PDFDocument.load(fs.readFileSync(pdfPath));
-        const pdfsResult = [];
-        let pdfIndex = 1;
+        // 1. PDF Íntegro
+        uploadTasks.push((async () => {
+            const pdfCompleto = await PDFDocument.create();
+            const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
 
-        // 1️⃣ PDF completo con carátula
-        const pdfCompleto = await PDFDocument.create();
-        for (const file of files) {
-            const pageIndex = parseInt(file.replace("page-", "").replace(".png", "")) - 1;
-            const [copiedPage] = await pdfCompleto.copyPages(originalPdf, [pageIndex]);
-            pdfCompleto.addPage(copiedPage);
-        }
-        const bytesCompleto = await pdfCompleto.save();
-        const nombrePdfCompleto = `GEN_AUTOMATICO_${idCaratula}.pdf`;
-        const folderClienteB = TENANT_FOLDERS.clienteB; 
+            // TÉCNICA: Batch Copying - Copia de bajo nivel de objetos PDF en una sola operación
+            const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
+            copiedPages.forEach(p => pdfCompleto.addPage(p));
 
-        const pdfUrlCompleto = await saveToDrive(
-            Buffer.from(bytesCompleto), 
-            nombrePdfCompleto, 
-            folderClienteB // <--- Se guarda
-        );
+            const bytes = await pdfCompleto.save();
+            const url = await saveToDrive(Buffer.from(bytes), `GEN_AUTOMATICO_${idCaratula}.pdf`, TENANT_FOLDERS.clienteB);
+            console.log(`[INFO] [UPLOAD] Main document stored for: clienteB`);
+            return url;
+        })());
 
-        pdfsResult.push(pdfUrlCompleto);
-        console.log(`[OK] PDF completo subido a ClienteB: ${nombrePdfCompleto}`);
+        // 2. Segmentos por separador
+        bloques.forEach((bloque) => {
+            uploadTasks.push((async () => {
+                const nuevoPdf = await PDFDocument.create();
+                const indices = bloque.files.map(f => f.pageIdx);
 
-        // 2️⃣ PDFs por separador
-        for (const bloque of bloques) {
-            // ignorar bloque sin código (solo pasa si no hay SEP)
-            if (!bloque.codigoCategoria) continue;
+                // Aplicación de Batch Copying para segmentos
+                const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
+                copiedPages.forEach(p => nuevoPdf.addPage(p));
 
-            const nuevoPdf = await PDFDocument.create();
-            for (const file of bloque.files) {
-                const pageIndex = parseInt(file.replace("page-", "").replace(".png", "")) - 1;
-                const [copiedPage] = await nuevoPdf.copyPages(originalPdf, [pageIndex]);
-                nuevoPdf.addPage(copiedPage);
-            }
+                const bytes = await nuevoPdf.save();
+                const nombrePdf = `${bloque.codigoCategoria}_${idCaratula}.pdf`;
+                const url = await saveToDrive(Buffer.from(bytes), nombrePdf, folderId);
+                console.log(`[INFO] [UPLOAD] Segment block [${bloque.codigoCategoria}] stored successfully.`);
+                return url;
+            })());
+        });
 
-            const bytes = await nuevoPdf.save();
-            const nombrePdf = `${bloque.codigoCategoria}_${idCaratula}.pdf`;
+        const pdfsResult = await Promise.all(uploadTasks);
 
-            console.log(`[DRIVE UPLOAD] name: ${nombrePdf}, folderId: ${folderId}, size: ${bytes.length}`);
-            const pdfUrl = await saveToDrive(Buffer.from(bytes), nombrePdf, folderId);
-            pdfsResult.push(pdfUrl);
-            console.log(`[OK] PDF ${pdfIndex} subido: ${nombrePdf}`);
-            pdfIndex++;
-        }
+        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+        console.log(`[SUCCESS] [JOB_FINISHED] Execution time: ${duration}s | Total files: ${pdfsResult.length}`);
 
-        // STEP 6: limpieza tmp
-        console.log("[STEP 6] Limpiando archivos temporales...");
-        try {
-            await fs.emptyDir(path.join("tmp", "pdf"));
-            await fs.emptyDir(tmpDir);
-            console.log("[OK] Tmp limpio");
-        } catch (err) {
-            console.warn("[WARNING] Error limpiando tmp:", err);
-        }
-
-        console.log("[JOB END]");
         return pdfsResult;
 
     } catch (err) {
-        console.error("[JOB FAILED]", err);
+        console.error(`[CRITICAL] [JOB_FAILED] Termination due to error: ${err.message}`);
         throw err;
+    } finally {
+        await Promise.all([
+            fs.emptyDir(path.join("tmp", "pdf")).catch(() => { }),
+            fs.emptyDir(tmpDir).catch(() => { })
+        ]);
+        console.log("[INFO] [CLEANUP] Post-process local file deletion finalized.");
     }
 };
