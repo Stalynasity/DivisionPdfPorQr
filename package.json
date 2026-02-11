@@ -1,0 +1,30 @@
+{
+  "name": "projetpdf",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "worker": "node src/queue/sensado.worker.js"
+  },
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bullmq": "^5.67.3",
+    "canvas": "^3.2.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "fs-extra": "^11.3.3",
+    "googleapis": "^171.4.0",
+    "ioredis": "^5.9.2",
+    "jsqr": "^1.4.0",
+    "p-limit": "^7.3.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.624",
+    "zxing-wasm": "^2.2.4"
+  }
+}
