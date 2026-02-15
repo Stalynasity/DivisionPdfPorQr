@@ -1,4 +1,4 @@
-import { splitQueue } from "../queue/queue.js";
+import { splitQueue } from "../jobs/queue.js";
 import { downloadFromDrive } from "../services/drive.service.js";
 
 export const splitController = async (req, res) => {
@@ -27,7 +27,7 @@ export const splitController = async (req, res) => {
             pdfPath: tmpPath,
             tenant: tenant
         }, {
-            attempts: 4, // reintenta hasta 3 veces si falla
+            attempts: 3, // reintenta hasta 3 veces si falla
             backoff: { type: "exponential", delay: 5000 }, // backoff exponencial
             removeOnComplete: true, // borra automáticamente si se completa
             removeOnFail: false     // mantiene si falla (para debug)

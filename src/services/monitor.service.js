@@ -1,12 +1,9 @@
-import { google } from "googleapis";
-import { getOAuthClient } from "./auth.oauth.js";
-import { splitQueue } from "../queue/queue.js";
+import { splitQueue } from "../jobs/queue.js";
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
-import { moveFile } from "./drive.service.js"; // Asegúrate de importar moveFile
+import { moveFile, getDriveClient } from "./drive.service.js";
 
 export const watchInputFolder = async () => {
-    const auth = await getOAuthClient();
-    const drive = google.drive({ version: "v3", auth });
+    const drive = await getDriveClient();
 
     try {
         const res = await drive.files.list({
@@ -27,7 +24,7 @@ export const watchInputFolder = async () => {
             await splitQueue.add("split", {
                 fileId: file.id,
                 fileName: file.name,
-                tenant: "produccion" 
+                tenant: "Automatico" 
             });
             
             console.log(`[MONITOR] Archivo ${file.name} encolado correctamente.`);

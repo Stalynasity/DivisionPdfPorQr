@@ -3,13 +3,13 @@ import { PDFDocument } from "pdf-lib";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
 import { saveToDrive } from "./drive.service.js";
-import { TENANT_FOLDERS } from "../config/tenants.js";
+import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
 import pLimit from "p-limit";
 import path from "path";
 
-export const processPdfSplit = async (pdfPath, tenant) => {
+export const processPdfSplit = async (pdfPath, tenant, jobId) => {
     const startTime = Date.now();
-    const tmpDir = path.join("tmp", "img");
+    const tmpDir = path.join(PATHS.tempImg, `job-${jobId}`); // Carpeta privada
     const folderId = TENANT_FOLDERS[tenant];
 
     console.log(`[INFO] [SYSTEM_START] Processing request for Tenant: [${tenant.toUpperCase()}]`);
@@ -22,8 +22,9 @@ export const processPdfSplit = async (pdfPath, tenant) => {
 
     try {
         // STEP 0: Limpieza de directorios
+        await fs.ensureDir(tmpDir); 
         await fs.emptyDir(tmpDir);
-        console.log("[INFO] [CLEANUP] Temporary directories initialized.");
+        console.log(`[INFO] [CLEANUP] Workspace initialized: ${tmpDir}`);
 
         // STEP 1: Renderizado de PDF
         const renderStart = Date.now();
@@ -89,8 +90,8 @@ export const processPdfSplit = async (pdfPath, tenant) => {
 
         // STEP 5: Generación de PDF y Carga masiva (Batch Copying)
         console.log("[INFO] [OUTPUT_GEN] Initializing concurrent upload and batch copying...");
-        const pdfBuffer = await fs.readFile(pdfPath);
-        const originalPdf = await PDFDocument.load(pdfBuffer);
+        const pdfData = await fs.readFile(pdfPath);
+        const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
         const uploadTasks = [];
 
         // 1. PDF Íntegro
@@ -103,8 +104,8 @@ export const processPdfSplit = async (pdfPath, tenant) => {
             copiedPages.forEach(p => pdfCompleto.addPage(p));
 
             const bytes = await pdfCompleto.save();
-            const url = await saveToDrive(Buffer.from(bytes), `GEN_AUTOMATICO_${idCaratula}.pdf`, TENANT_FOLDERS.clienteB);
-            console.log(`[INFO] [UPLOAD] Main document stored for: clienteB`);
+            const url = await saveToDrive(Buffer.from(bytes), `GEN_AUTOMATICO_${idCaratula}.pdf`, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
+            console.log(`[INFO] [UPLOAD] Main document stored for: `,TENANT_FOLDERS.Automatico);
             return url;
         })());
 
@@ -134,13 +135,14 @@ export const processPdfSplit = async (pdfPath, tenant) => {
         return pdfsResult;
 
     } catch (err) {
-        console.error(`[CRITICAL] [JOB_FAILED] Termination due to error: ${err.message}`);
+        console.error(`[CRITICAL] [JOB_FAILED] Job ${jobId}: ${err.message}`);
         throw err;
     } finally {
+        // LIMPIEZA ATÓMICA: Solo borramos lo que este Job creó
         await Promise.all([
-            fs.emptyDir(path.join("tmp", "pdf")).catch(() => { }),
-            fs.emptyDir(tmpDir).catch(() => { })
+            fs.remove(tmpDir).catch(() => {}), // Borra carpeta de imágenes del job
+            fs.remove(pdfPath).catch(() => {}) // Borra el PDF original descargado
         ]);
-        console.log("[INFO] [CLEANUP] Post-process local file deletion finalized.");
+        console.log(`[INFO] [CLEANUP] Resources for Job ${jobId} released.`);
     }
 };

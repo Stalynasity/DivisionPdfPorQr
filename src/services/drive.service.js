@@ -1,25 +1,32 @@
 import { google } from "googleapis";
 import fs from "fs";
-import path from "path";
+import { PATHS } from "../config/tenants.js";
 import { Readable } from "stream";
 import fsExtra from "fs-extra";
 import { getOAuthClient } from "./auth.oauth.js";
 import dotenv from "dotenv";
+import path from "path";
 
 dotenv.config({ path: "./.env" });
 
-// Inicializar Drive
-const auth = await getOAuthClient();
-const drive = google.drive({ version: "v3", auth });
+let driveInstance;
 
 // Exportar cliente drive para otros servicios
-export { drive };
+export const getDriveClient = async () => {
+    if (!driveInstance) {
+        const auth = await getOAuthClient();
+        driveInstance = google.drive({ version: "v3", auth });
+    }
+    return driveInstance;
+};
 
 // ========================= DOWNLOAD =========================
-export const downloadFromDrive = async (fileId) => {
-    const dirPath = path.join("tmp", "pdf");
+export const downloadFromDrive = async (fileId, jobId) => {
+    const drive = await getDriveClient(); // Obtener instancia segura
+    const dirPath = PATHS.tempPdf; // Usar PATHS centralizado
     await fsExtra.ensureDir(dirPath);
-    const destPath = path.join(dirPath, `temp_${Date.now()}.pdf`);
+    
+    const destPath = path.join(dirPath, `job-${jobId}.pdf`);
     const dest = fs.createWriteStream(destPath);
 
     const res = await drive.files.get(
@@ -38,6 +45,7 @@ export const downloadFromDrive = async (fileId) => {
 
 // ========================= UPLOAD =========================
 export const saveToDrive = async (fileBuffer, name, folderId) => {
+    const drive = await getDriveClient(); // <--- IMPORTANTE: Obtener instancia
     const bufferStream = new Readable();
     bufferStream.push(fileBuffer);
     bufferStream.push(null);

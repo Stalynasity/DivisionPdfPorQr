@@ -49,6 +49,7 @@ export const getOAuthClient = async () => {
 
     fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
 
+
     console.log("Token guardado en token.json");
 
     return oAuth2Client;
