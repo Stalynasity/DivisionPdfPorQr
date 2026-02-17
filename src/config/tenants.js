@@ -21,5 +21,6 @@ export const PATHS = {
     binaries: {
         // poppler suele necesitar el ejecutable exacto pdftoppm
         poppler: process.env.POPPLER_BIN || "C:\\poppler\\Library\\bin\\pdftoppm.exe"
-    }
+    },
+    local: process.env.Local_metadata
 };

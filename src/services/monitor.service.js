@@ -3,7 +3,6 @@ import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
 import { moveFile, getDriveClient, downloadFromDrive } from "./drive.service.js";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
-import { getDataFromExcel } from "./excel.service.js";
 import fs from "fs-extra";
 import path from "path";
 

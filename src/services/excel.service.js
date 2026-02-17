@@ -7,15 +7,9 @@ dotenv.config();
 export const getDataFromExcel = async (idBusqueda) => {
     try {
         const drive = await getDriveClient();
-        const SPREADSHEET_ID = process.env.EXCEL_DATABASE_ID; 
+        const SPREADSHEET_ID = process.env.EXCEL_DATABASE_ID;
 
-        // LOG DE DEPURACIÓN
-        console.log(`[EXCEL] Intentando acceder al Excel con ID: ${SPREADSHEET_ID}`);
-
-        if (!SPREADSHEET_ID) {
-            throw new Error("La variable EXCEL_DATABASE_ID no está definida en el .env");
-        }
-
+        // Descarga obligatoria en cada llamada
         const response = await drive.files.export(
             {
                 fileId: SPREADSHEET_ID,
@@ -24,28 +18,22 @@ export const getDataFromExcel = async (idBusqueda) => {
             { responseType: "arraybuffer" }
         );
 
-        console.log(`[EXCEL] Archivo descargado de Drive, procesando hojas...`);
-
         const workbook = XLSX.read(response.data, { type: "buffer" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet);
 
         const cleanSearchId = String(idBusqueda).trim().toLowerCase();
 
-        // Buscamos específicamente en la columna ID_Caratula que se ve en tu imagen
+        // Buscamos el ID_Caratula y devolvemos TODA la fila (metadata)
         const registro = rows.find(row => {
-            const rowId = row.ID_Caratula || row.id_caratula || row.ID; 
+            const rowId = row.ID_Caratula || row.id_caratula;
             return String(rowId).trim().toLowerCase() === cleanSearchId;
         });
 
-        if (!registro) {
-            console.warn(`[EXCEL] ID [${idBusqueda}] no encontrado en las filas.`);
-            return null;
-        }
+        return registro || null;
 
-        return registro;
     } catch (error) {
-        console.error("Error leyendo base de datos Excel:", error.message);
-        throw error;
+        console.error(`[EXCEL ERROR] Falló la descarga en tiempo real: ${error.message}`);
+        throw error; // Re-lanzamos para que el Worker sepa que hubo un error de red
     }
 };
