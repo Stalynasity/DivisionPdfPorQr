@@ -3,7 +3,11 @@ import path from "path";
 import readline from "readline";
 import { google } from "googleapis";
 
-const SCOPES = ["https://www.googleapis.com/auth/drive"];
+const SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.readonly'
+];
 const TOKEN_PATH = "token.json";
 const CREDENTIALS_PATH = path.resolve("secrets/auth.json");
 
@@ -26,8 +30,9 @@ export const getOAuthClient = async () => {
     }
 
     const authUrl = oAuth2Client.generateAuthUrl({
-        access_type: "offline",
+        access_type: "offline", // Requerido para obtener refresh_token
         scope: SCOPES,
+        prompt: 'consent'       // nuevo token persistente
     });
 
     console.log("Autoriza aquí:");

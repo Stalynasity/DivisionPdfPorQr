@@ -20,6 +20,6 @@ export const PATHS = {
     tempPdf: process.env.TEMP_PDF_PATH || path.join("tmp", "pdf"),
     binaries: {
         // poppler suele necesitar el ejecutable exacto pdftoppm
-        poppler: process.env.POPPLER_PATH || "C:\\poppler\\Library\\bin\\pdftoppm.exe"
+        poppler: process.env.POPPLER_BIN || "C:\\poppler\\Library\\bin\\pdftoppm.exe"
     }
 };

@@ -7,45 +7,53 @@ import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
 import pLimit from "p-limit";
 import path from "path";
 
-export const processPdfSplit = async (pdfPath, tenant, jobId) => {
+/**
+ * Procesa la división del PDF usando metadata ya validada por el monitor.
+ * @param {string} pdfPath - Ruta local del PDF descargado.
+ * @param {string} tenant - Nombre del tenant.
+ * @param {string} jobId - ID del Job de BullMQ.
+ * @param {Object} validatedData - Objeto que contiene { idCaratula, excelMetadata }.
+ */
+export const processPdfSplit = async (pdfPath, tenant, jobId, validatedData) => {
+    const { idCaratula, excelMetadata } = validatedData;
     const startTime = Date.now();
-    const tmpDir = path.join(PATHS.tempImg, `job-${jobId}`); // Carpeta privada
+    const tmpDir = path.join(PATHS.tempImg, `job-${jobId}`); 
     const folderId = TENANT_FOLDERS[tenant];
 
-    console.log(`[INFO] [SYSTEM_START] Processing request for Tenant: [${tenant.toUpperCase()}]`);
-    console.log(`[INFO] [FILE_PATH] Source: ${pdfPath}`);
+    console.log(`[INFO] [SYSTEM_START] Processing Job: ${jobId} | Tenant: [${tenant.toUpperCase()}]`);
+    console.log(`[INFO] [METADATA] ID Carátula: ${idCaratula} | Cliente: ${excelMetadata.Cliente || 'N/A'}`);
 
     if (!folderId) {
-        console.error(`[ERROR] [CONFIG_FAULT] Tenant '${tenant}' is not registered in TENANT_FOLDERS.`);
+        console.error(`[ERROR] [CONFIG_FAULT] Tenant '${tenant}' no registrado.`);
         throw new Error(`Tenant no registrado: ${tenant}`);
     }
 
     try {
-        // STEP 0: Limpieza de directorios
+        // STEP 0: Limpieza y preparación
         await fs.ensureDir(tmpDir); 
         await fs.emptyDir(tmpDir);
-        console.log(`[INFO] [CLEANUP] Workspace initialized: ${tmpDir}`);
 
-        // STEP 1: Renderizado de PDF
+        // STEP 1: Renderizado de PDF (Todas las páginas para buscar separadores SEP|)
         const renderStart = Date.now();
-        await renderPdfToImages(pdfPath, tmpDir);
-        console.log(`[INFO] [RENDER] PDF-to-Image conversion completed in ${((Date.now() - renderStart) / 1000).toFixed(2)}s`);
+        await renderPdfToImages(pdfPath, tmpDir); // Aquí renderizamos todo el documento
+        console.log(`[INFO] [RENDER] PDF-to-Image completado en ${((Date.now() - renderStart) / 1000).toFixed(2)}s`);
 
-        // STEP 2: Validación de archivos
-        const files = (await fs.readdir(tmpDir)).sort();
-        if (!files.length) throw new Error("No images were generated from the source PDF.");
-        console.log(`[INFO] [ANALYSIS] Detected ${files.length} pages for processing.`);
+        // STEP 2: Validación de imágenes generadas
+        const files = (await fs.readdir(tmpDir))
+            .filter(f => f.endsWith('.png'))
+            .sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/)[0]);
+                const numB = parseInt(b.match(/\d+/)[0]);
+                return numA - numB;
+            });
 
-        // STEP 3: Reconocimiento de QR
-        console.log("[INFO] [QR_SCAN] Initializing barcode recognition...");
+        if (!files.length) throw new Error("No se generaron imágenes del PDF original.");
+
+        // STEP 3: Reconocimiento de QRs (Saltamos la primera página porque ya tenemos el idCaratula)
+        console.log("[INFO] [QR_SCAN] Buscando separadores en páginas internas...");
         const limit = pLimit(4);
-        const firstPagePath = path.join(tmpDir, files[0]);
-
-        let idCaratula = await readQR(firstPagePath);
-        if (!idCaratula) throw new Error("Metadata failure: Main QR ID not found on cover page.");
-        idCaratula = idCaratula.replace(/^"+|"+$/g, "").trim();
-        console.log(`[INFO] [METADATA] Cover ID identified as: ${idCaratula}`);
-
+        
+        // files.slice(1) omite la carátula
         const qrResults = await Promise.all(
             files.slice(1).map(file => limit(async () => {
                 const imgPath = path.join(tmpDir, file);
@@ -55,94 +63,92 @@ export const processPdfSplit = async (pdfPath, tenant, jobId) => {
                     qrData = await readQR(imgPath);
                     if (qrData) {
                         qrData = qrData.replace(/^"+|"+$/g, "").trim();
-                        console.log(`[DEBUG] [QR_FOUND] Page ${pageIdx + 1}: ${qrData}`);
                     }
                 } catch (err) {
-                    console.warn(`[WARN] [QR_READ_FAIL] Page ${pageIdx + 1}: ${err.message}`);
+                    console.warn(`[WARN] [QR_READ_FAIL] Página ${pageIdx + 1}: ${err.message}`);
                 }
                 return { file, qrData, pageIdx };
             }))
         );
 
-        // STEP 4: Segmentación lógica
-        console.log("[INFO] [SEGMENTATION] Organizing document blocks based on separators...");
+        // STEP 4: Segmentación lógica por separadores "SEP|..."
         const bloques = [];
         let bloqueActual = [];
         let codigoActual = null;
 
-        for (const { file, qrData, pageIdx } of qrResults) {
+        for (const { qrData, pageIdx } of qrResults) {
             if (qrData && qrData.startsWith("SEP|")) {
-                const nuevoCodigo = qrData.split("|")[1]?.trim() || "UNKNOWN";
+                const nuevoCodigo = qrData.split("|")[1]?.trim() || "DESCONOCIDO";
+                
+                // Si ya teníamos un bloque acumulado, lo cerramos
                 if (bloqueActual.length) {
-                    bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual || "UNKNOWN" });
+                    bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual || "INICIO" });
                 }
-                bloqueActual = [{ file, pageIdx }];
+                
+                // Iniciamos nuevo bloque con la página del separador
+                bloqueActual = [{ pageIdx }];
                 codigoActual = nuevoCodigo;
                 continue;
             }
-            bloqueActual.push({ file, pageIdx });
+            bloqueActual.push({ pageIdx });
         }
 
+        // Añadir el último bloque
         if (bloqueActual.length) {
-            bloques.push({ files: bloqueActual, codigoCategoria: codigoActual || "UNKNOWN" });
+            bloques.push({ files: bloqueActual, codigoCategoria: codigoActual || "FINAL" });
         }
-        console.log(`[INFO] [SEGMENTATION_COMPLETE] Total segments identified: ${bloques.length}`);
 
-        // STEP 5: Generación de PDF y Carga masiva (Batch Copying)
-        console.log("[INFO] [OUTPUT_GEN] Initializing concurrent upload and batch copying...");
+        // STEP 5: Generación de PDFs y Carga a Drive
         const pdfData = await fs.readFile(pdfPath);
         const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
         const uploadTasks = [];
 
-        // 1. PDF Íntegro
+        // Definimos un prefijo para los nombres de archivo basado en el Excel (ajusta "Nombre_Archivo" a tu columna)
+        const filePrefix = excelMetadata.Nombre_Archivo || idCaratula;
+
+        // 1. PDF Íntegro (Copia completa)
         uploadTasks.push((async () => {
             const pdfCompleto = await PDFDocument.create();
             const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
-
-            // TÉCNICA: Batch Copying - Copia de bajo nivel de objetos PDF en una sola operación
             const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
             copiedPages.forEach(p => pdfCompleto.addPage(p));
 
             const bytes = await pdfCompleto.save();
-            const url = await saveToDrive(Buffer.from(bytes), `GEN_AUTOMATICO_${idCaratula}.pdf`, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
-            console.log(`[INFO] [UPLOAD] Main document stored for: `,TENANT_FOLDERS.Automatico);
-            return url;
+            const nombreCompleto = `FULL_${filePrefix}.pdf`;
+            return await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
         })());
 
-        // 2. Segmentos por separador
+        // 2. Fragmentos (Bloques detectados)
         bloques.forEach((bloque) => {
             uploadTasks.push((async () => {
                 const nuevoPdf = await PDFDocument.create();
                 const indices = bloque.files.map(f => f.pageIdx);
 
-                // Aplicación de Batch Copying para segmentos
                 const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
                 copiedPages.forEach(p => nuevoPdf.addPage(p));
 
                 const bytes = await nuevoPdf.save();
-                const nombrePdf = `${bloque.codigoCategoria}_${idCaratula}.pdf`;
-                const url = await saveToDrive(Buffer.from(bytes), nombrePdf, folderId);
-                console.log(`[INFO] [UPLOAD] Segment block [${bloque.codigoCategoria}] stored successfully.`);
-                return url;
+                // Nombre: CATEGORIA_IDCARATULA.pdf
+                const nombreSegmento = `${bloque.codigoCategoria}_${filePrefix}.pdf`;
+                return await saveToDrive(Buffer.from(bytes), nombreSegmento, folderId);
             })());
         });
 
         const pdfsResult = await Promise.all(uploadTasks);
-
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.log(`[SUCCESS] [JOB_FINISHED] Execution time: ${duration}s | Total files: ${pdfsResult.length}`);
-
+        
+        console.log(`[SUCCESS] [JOB_FINISHED] Duración: ${duration}s | Archivos subidos: ${pdfsResult.length}`);
         return pdfsResult;
 
     } catch (err) {
         console.error(`[CRITICAL] [JOB_FAILED] Job ${jobId}: ${err.message}`);
         throw err;
     } finally {
-        // LIMPIEZA ATÓMICA: Solo borramos lo que este Job creó
+        // Limpieza atómica de archivos locales
         await Promise.all([
-            fs.remove(tmpDir).catch(() => {}), // Borra carpeta de imágenes del job
-            fs.remove(pdfPath).catch(() => {}) // Borra el PDF original descargado
+            fs.remove(tmpDir).catch(() => {}),
+            fs.remove(pdfPath).catch(() => {})
         ]);
-        console.log(`[INFO] [CLEANUP] Resources for Job ${jobId} released.`);
+        console.log(`[INFO] [CLEANUP] Recursos locales liberados para Job ${jobId}.`);
     }
 };

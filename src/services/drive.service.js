@@ -14,64 +14,105 @@ let driveInstance;
 // Exportar cliente drive para otros servicios
 export const getDriveClient = async () => {
     if (!driveInstance) {
+        console.log("[DRIVE] Inicializando nueva instancia de cliente...");
         const auth = await getOAuthClient();
         driveInstance = google.drive({ version: "v3", auth });
+        console.log("[DRIVE] Cliente listo.");
     }
     return driveInstance;
 };
 
 // ========================= DOWNLOAD =========================
 export const downloadFromDrive = async (fileId, jobId) => {
-    const drive = await getDriveClient(); // Obtener instancia segura
-    const dirPath = PATHS.tempPdf; // Usar PATHS centralizado
+    console.log(`[DRIVE] Iniciando descarga de archivo ID: ${fileId} para Job: ${jobId}`);
+    const drive = await getDriveClient();
+    const dirPath = PATHS.tempPdf;
+
     await fsExtra.ensureDir(dirPath);
-    
+
     const destPath = path.join(dirPath, `job-${jobId}.pdf`);
     const dest = fs.createWriteStream(destPath);
 
-    const res = await drive.files.get(
-        { fileId, alt: "media" },
-        { responseType: "stream" }
-    );
+    try {
+        const res = await drive.files.get(
+            { fileId, alt: "media" },
+            { responseType: "stream" }
+        );
 
-    await new Promise((resolve, reject) => {
-        res.data.pipe(dest);
-        dest.on("finish", resolve);
-        dest.on("error", reject);
-    });
+        console.log(`[DRIVE] Stream de descarga recibido. Transfiriendo a disco...`);
 
-    return destPath;
+        await new Promise((resolve, reject) => {
+            res.data.pipe(dest);
+            dest.on("finish", () => {
+                console.log(`[DRIVE] Descarga completada exitosamente: ${destPath}`);
+                resolve();
+            });
+            dest.on("error", (err) => {
+                console.error(`[DRIVE] Error en el stream de escritura: ${err.message}`);
+                reject(err);
+            });
+            res.data.on("error", (err) => {
+                console.error(`[DRIVE] Error en el stream de lectura (Google): ${err.message}`);
+                reject(err);
+            });
+        });
+
+        return destPath;
+    } catch (error) {
+        console.error(`[DRIVE] Error fatal en descarga: ${error.message}`);
+        throw error;
+    }
 };
 
 // ========================= UPLOAD =========================
 export const saveToDrive = async (fileBuffer, name, folderId) => {
-    const drive = await getDriveClient(); // <--- IMPORTANTE: Obtener instancia
+    console.log(`[DRIVE] Subiendo archivo: ${name} a la carpeta: ${folderId}`);
+    const drive = await getDriveClient();
     const bufferStream = new Readable();
     bufferStream.push(fileBuffer);
     bufferStream.push(null);
 
-    const res = await drive.files.create({
-        requestBody: { name, parents: [folderId] },
-        media: { mimeType: "application/pdf", body: bufferStream },
-        supportsAllDrives: true
-    });
+    try {
+        const res = await drive.files.create({
+            requestBody: { name, parents: [folderId] },
+            media: { mimeType: "application/pdf", body: bufferStream },
+            supportsAllDrives: true
+        });
 
-    return res.data.id;
+        console.log(`[DRIVE] Subida terminada. Nuevo ID: ${res.data.id}`);
+        return res.data.id;
+    } catch (error) {
+        console.error(`[DRIVE] Error en subida: ${error.message}`);
+        throw error;
+    }
 };
 
+// ========================= MOVE =========================
 export const moveFile = async (fileId, targetFolderId) => {
-    const auth = await getOAuthClient();
-    const drive = google.drive({ version: "v3", auth });
+    console.log(`[DRIVE] Moviendo archivo ${fileId} hacia carpeta ${targetFolderId}...`);
+    const drive = await getDriveClient();
 
-    // Obtener la ubicación actual para quitarla
-    const file = await drive.files.get({ fileId, fields: "parents" });
-    const previousParents = file.data.parents.join(",");
+    try {
+        // Obtener la ubicación actual
+        const file = await drive.files.get({ fileId, fields: "parents" });
 
-    // Mover archivo
-    await drive.files.update({
-        fileId: fileId,
-        addParents: targetFolderId,
-        removeParents: previousParents,
-        fields: "id, parents",
-    });
+        if (!file.data.parents) {
+            throw new Error("El archivo no tiene padres conocidos o no se pudo acceder a ellos.");
+        }
+
+        const previousParents = file.data.parents.join(",");
+
+        // Mover archivo
+        await drive.files.update({
+            fileId: fileId,
+            addParents: targetFolderId,
+            removeParents: previousParents,
+            fields: "id, parents",
+        });
+
+        console.log(`[DRIVE] Archivo movido con éxito.`);
+    } catch (error) {
+        console.error(`[DRIVE] Error al mover archivo: ${error.message}`);
+        throw error;
+    }
 };

@@ -13,9 +13,18 @@ app.use("/split", splitRouter);
 app.listen(3010, () => {
     console.log("API PDF Split corriendo en puerto 3010");
     
-    // Iniciar sensing cada 60 segundos
-    setInterval(() => {
+    // Definimos la función de rastreo
+    const startMonitoring = async () => {
         console.log("[CRON] Revisando carpeta de entrada...");
-        watchInputFolder();
-    }, 60000); 
+        try {
+            await watchInputFolder();
+        } catch (error) {
+            console.error("[CRON ERROR] Error en la ejecución del monitor:", error);
+        } finally {
+            setTimeout(startMonitoring, 60000);
+        }
+    };
+
+    // Iniciamos el ciclo
+    startMonitoring();
 });
