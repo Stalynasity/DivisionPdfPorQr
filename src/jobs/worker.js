@@ -18,7 +18,10 @@ const processor = async (job) => {
     try {
         const excelMetadata = await getDataFromExcel(idCaratula);
 
-        if (!excelMetadata) {
+        if (excelMetadata) {
+            //consultar servicion para verficar que la data sea correctaa.
+
+        } else {
             console.warn(`[JOB ${job.id}] ID "${idCaratula}" NO encontrado.`);
             await moveFile(fileId, SYSTEM_FOLDERS.ERRORES);
             return;
