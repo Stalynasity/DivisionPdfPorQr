@@ -19,7 +19,7 @@ const processor = async (job) => {
         const excelMetadata = await getDataFromExcel(idCaratula);
 
         if (excelMetadata) {
-            //consultar servicion para verficar que la data sea correctaa.
+            //consultar servicion para verficar que la data sea correctaa. servicioBanco(excelMetadata)
 
         } else {
             console.warn(`[JOB ${job.id}] ID "${idCaratula}" NO encontrado.`);
