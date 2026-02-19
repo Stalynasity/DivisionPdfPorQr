@@ -1,5 +1,5 @@
 
-export const procesarYConfirmar(dataRecibida) {
+export const procesarYConfirmar = (dataRecibida) => {
     try {
 
         // 1. Lógica de consulta: Verificar si el ID ya existe
