@@ -21,7 +21,7 @@ app.listen(3010, () => {
         } catch (error) {
             console.error("[CRON ERROR] Error en la ejecución del monitor:", error);
         } finally {
-            setTimeout(startMonitoring, 60000);
+            setTimeout(startMonitoring, 4000);
         }
     };
 

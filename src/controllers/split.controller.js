@@ -4,10 +4,7 @@ import { downloadFromDrive } from "../services/drive.service.js";
 export const splitController = async (req, res) => {
     try {
         const { fileId, tenant } = req.body;
-
-        console.log("\n=======================");
         console.log("REQUEST BODY:", req.body);
-        console.log("=======================\n");
 
         if (!fileId) {
             return res.status(400).json({ ok: false, error: "Falta fileId" });

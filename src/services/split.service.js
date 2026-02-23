@@ -22,7 +22,7 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
 
     try {
         // STEP 0: Limpieza de directorios
-        await fs.ensureDir(tmpDir); 
+        await fs.ensureDir(tmpDir);
         await fs.emptyDir(tmpDir);
         console.log(`[INFO] [CLEANUP] Workspace initialized: ${tmpDir}`);
 
@@ -99,8 +99,11 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
 
             const bytes = await pdfCompleto.save();
             const url = await saveToDrive(Buffer.from(bytes), `GEN_AUTOMATICO_${idCaratula}.pdf`, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
-            console.log(`[INFO] [UPLOAD] Main document stored for: `,TENANT_FOLDERS.Automatico);
-            return url;
+            console.log(`[INFO] [UPLOAD] Main document stored for: `, TENANT_FOLDERS.Automatico);
+            return {
+                categoria: "PDF_COMPLETO",
+                url: url
+            };
         })());
 
         // 2. Segmentos por separador
@@ -117,7 +120,10 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
                 const nombrePdf = `${bloque.codigoCategoria}_${idCaratula}.pdf`;
                 const url = await saveToDrive(Buffer.from(bytes), nombrePdf, folderId);
                 console.log(`[INFO] [UPLOAD] Segment block [${bloque.codigoCategoria}] stored successfully.`);
-                return url;
+                return {
+                    categoria: bloque.codigoCategoria,
+                    url: url
+                };
             })());
         });
 
@@ -142,8 +148,8 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
     } finally {
         // LIMPIEZA ATÓMICA: Solo borramos lo que este Job creó
         await Promise.all([
-            fs.remove(tmpDir).catch(() => {}), // Borra carpeta de imágenes del job
-            fs.remove(pdfPath).catch(() => {}) // Borra el PDF original descargado
+            fs.remove(tmpDir).catch(() => { }), // Borra carpeta de imágenes del job
+            fs.remove(pdfPath).catch(() => { }) // Borra el PDF original descargado
         ]);
         console.log(`[INFO] [CLEANUP] Resources for Job ${jobId} released.`);
     }
