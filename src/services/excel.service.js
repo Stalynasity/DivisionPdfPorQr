@@ -1,85 +1,121 @@
-import ExcelJS from "exceljs";
-import { getDriveClient } from "./drive.service.js";
+import { google } from "googleapis";
+import { getOAuthClient } from "./auth.oauth.js";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-let cachedMap = null;
-let lastModifiedTime = null;
+const SPREADSHEET_ID = process.env.EXCEL_DATABASE_ID;
+const SHEET_NAME = process.env.SHEET_NAME || "Caratulas_Maestro";
 
+let sheetsInstance;
+
+const getSheetsClient = async () => {
+    if (!sheetsInstance) {
+        const auth = await getOAuthClient();
+        sheetsInstance = google.sheets({ version: "v4", auth });
+    }
+    return sheetsInstance;
+};
+
+/**
+ * Busca un ID y retorna toda la fila como objeto
+ */
 export const getDataFromExcel = async (idBusqueda) => {
     try {
-        const drive = await getDriveClient();
-        const SPREADSHEET_ID = process.env.EXCEL_DATABASE_ID;
-
-        // 🔥 Obtener metadata del archivo
-        const metadata = await drive.files.get({
-            fileId: SPREADSHEET_ID,
-            fields: "modifiedTime"
+        const sheets = await getSheetsClient();
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!A:Z`, 
         });
 
-        const currentModifiedTime = metadata.data.modifiedTime;
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) return null;
 
-        // 🔥 Solo descargar si cambió
-        if (!cachedMap || lastModifiedTime !== currentModifiedTime) {
-
-            console.log("[EXCEL] Archivo actualizado, descargando...");
-
-            const response = await drive.files.export(
-                {
-                    fileId: SPREADSHEET_ID,
-                    mimeType:
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                },
-                { responseType: "arraybuffer" }
-            );
-
-            const workbook = new ExcelJS.Workbook();
-            await workbook.xlsx.load(response.data);
-
-            const worksheet = workbook.worksheets[0];
-
-            const headers = [];
-            const tempMap = new Map();
-
-            worksheet.eachRow((row, rowNumber) => {
-
-                if (rowNumber === 1) {
-                    row.eachCell((cell, colNumber) => {
-                        headers[colNumber] = cell.value;
-                    });
-                } else {
-                    const rowData = {};
-
-                    row.eachCell((cell, colNumber) => {
-                        const header = headers[colNumber];
-                        if (header) {
-                            rowData[header] = cell.value;
-                        }
-                    });
-
-                    const key = String(rowData.ID_Caratula ?? "")
-                        .trim()
-                        .toLowerCase();
-
-                    if (key) {
-                        tempMap.set(key, rowData);
-                    }
-                }
-            });
-
-            cachedMap = tempMap;
-            lastModifiedTime = currentModifiedTime;
-
-            console.log("[EXCEL] Cache actualizado por cambio real");
-        }
-
+        const headers = rows[0];
         const cleanSearchId = String(idBusqueda).trim().toLowerCase();
 
-        return cachedMap.get(cleanSearchId) || null;
+        // Buscamos el índice de la columna ID_Caratula dinámicamente
+        const idColIndex = headers.indexOf("ID_Caratula");
+        
+        const rowIndex = rows.findIndex((row, idx) => 
+            idx > 0 && String(row[idColIndex] ?? "").trim().toLowerCase() === cleanSearchId
+        );
+
+        if (rowIndex === -1) return null;
+
+        const rowData = rows[rowIndex];
+        
+        // Retornamos objeto con data y el número de fila (útil para actualizar luego)
+        const result = headers.reduce((acc, header, index) => {
+            acc[header] = rowData[index] || "";
+            return acc;
+        }, {});
+
+        return { ...result, rowNumber: rowIndex + 1 }; 
 
     } catch (error) {
-        console.error(`[EXCEL ERROR] ${error.message}`);
+        console.error(`[SHEETS ERROR] ${error.message}`);
         throw error;
+    }
+};
+
+/**
+ * Actualiza una celda específica (ej. Columna "Estado" o "Link")
+ */
+export const updateSheetRow = async (rowNumber, columnName, value) => {
+    try {
+        const sheets = await getSheetsClient();
+        
+        // 1. Obtener encabezados para saber qué letra de columna es
+        const headerRes = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!1:1`,
+        });
+        
+        const headers = headerRes.data.values[0];
+        const colIndex = headers.indexOf(columnName);
+        if (colIndex === -1) throw new Error(`Columna ${columnName} no encontrada`);
+
+        // Convertir índice a letra (0=A, 1=B...)
+        const colLetter = String.fromCharCode(65 + colIndex);
+
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!${colLetter}${rowNumber}`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [[value]] }
+        });
+
+        console.log(`[SHEETS] Columna ${columnName} actualizada en fila ${rowNumber}`);
+    } catch (error) {
+        console.error(`[SHEETS UPDATE ERROR] ${error.message}`);
+    }
+};
+
+
+export const existsIdCaratula = async (idBusqueda) => {
+    try {
+        const sheets = await getSheetsClient();
+        const cleanSearchId = String(idBusqueda).trim().toLowerCase();
+
+        // Pedimos solo la columna A para ahorrar ancho de banda y tiempo
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!A:A`, 
+        });
+
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) return null;
+
+        // Buscamos el índice. rowIndex + 1 nos da la fila real de Sheets
+        const rowIndex = rows.findIndex((row) => 
+            String(row[0] ?? "").trim().toLowerCase() === cleanSearchId
+        );
+
+        return rowIndex !== -1 ? rowIndex + 1 : null;
+
+    } catch (error) {
+        console.error(`[SHEETS QUICK CHECK ERROR] ${error.message}`);
+        return null;
     }
 };

@@ -6,7 +6,8 @@ import { google } from "googleapis";
 const SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/drive.readonly'
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/spreadsheets'
 ];
 const TOKEN_PATH = "token.json";
 const CREDENTIALS_PATH = path.resolve("secrets/auth.json");

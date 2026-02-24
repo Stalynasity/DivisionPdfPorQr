@@ -3,6 +3,7 @@ import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
 import { moveFile, getDriveClient, downloadFromDrive } from "./drive.service.js";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
+import { getDataFromExcel, updateSheetRow, existsIdCaratula } from "../services/excel.service.js";
 import fs from "fs-extra";
 import path from "path";
 
@@ -42,7 +43,23 @@ export const watchInputFolder = async () => {
                 if (!idCaratula) {
                     console.error(`[RECHAZADO] ${file.name} no tiene QR. Moviendo a ERRORES.`);
                     await moveFile(file.id, SYSTEM_FOLDERS.ERRORES);
-                    continue; // <--- AQUÍ SE CANCELA TODO Y NO ENTRA A LA COLA
+                    continue;
+                }
+                
+                const idLimpio = idCaratula.replace(/^"+|"+$/g, "").trim();
+
+                // Solo verificamos existencia
+                const rowNumber = await existsIdCaratula(idLimpio);
+
+                if (rowNumber) {
+                    console.log(`[QR CONFIRMADO] ID: ${idLimpio} en fila ${rowNumber}`);
+
+                    // Marcamos el estado inmediatamente usando el rowNumber obtenido
+                    await updateSheetRow(rowNumber, "ESTADO_CARGA", "En cola para split");
+                } else {
+                    console.error(`[RECHAZADO] ID ${idLimpio} no existe en el Maestro.`);
+                    await moveFile(file.id, SYSTEM_FOLDERS.ERRORES);
+                    continue;
                 }
 
                 // 4. Si pasó los filtros, movemos a TRÁNSITO y encolamos

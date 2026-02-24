@@ -1,34 +1,34 @@
+import { getDataFromExcel, updateSheetRow } from "./src/services/excel.service.js";
 import dotenv from "dotenv";
-import { getDataFromExcel } from "./src/services/excel.service.js";
 
 dotenv.config();
 
-async function testExcel() {
-    // Reemplaza esto con un ID que sepas que existe en tu columna ID_Caratula
-    const idAProbar = "CAR_1111111111_TAR-JET_260213111444"; 
-
-    console.log("=== TEST DE LECTURA EXCEL ===");
-    console.log(`Buscando ID: ${idAProbar}`);
-    console.log(`Usando SPREADSHEET_ID: ${process.env.EXCEL_DATABASE_ID}`);
-    console.log("------------------------------");
+async function runTest() {
+    const idAProbar = "CAR_0988190060001_CR-LINE_260208011935"; // <--- Cambia esto por un ID real de tu columna A
+    
+    console.log(`\n--- 🧪 INICIANDO TEST DE EXCEL ---`);
+    console.log(`🔍 Buscando ID: ${idAProbar}...`);
 
     try {
-        const resultado = await getDataFromExcel(idAProbar);
+        // 1. Prueba de Lectura
+        const data = await getDataFromExcel(idAProbar);
 
-        if (resultado) {
-            console.log("Se encontraron los datos:");
-            console.table(resultado); // Muestra los datos en una tabla bonita
+        if (data) {
+            console.log("✅ ID ENCONTRADO:");
+            console.table(data);
+
+            // 2. Prueba de Escritura
+            console.log(`✍️ Intentando actualizar estado en la fila ${data.rowNumber}...`);
+            await updateSheetRow(data.rowNumber, "ESTADO_CARGA", "TEST_EXITOSO");
+            
+            console.log("✅ PROCESO COMPLETADO: Revisa tu Google Sheet, la columna 'Estado' debería decir 'TEST_EXITOSO'.");
         } else {
-            console.log("Conexión exitosa, pero el ID no se encontró en el archivo.");
+            console.error("❌ El ID no existe en el archivo. Verifica que esté en la columna 'ID_Caratula'.");
         }
+
     } catch (error) {
-        console.error("ERROR EN EL TEST:");
-        console.error(error.message);
-        
-        if (error.message.includes("403")) {
-            console.error("confirma que es un problema de PERMISOS. o en drive.file agregar mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'");
-        }
+        console.error("💥 ERROR DURANTE EL TEST:", error.message);
     }
 }
 
-testExcel();
+runTest();

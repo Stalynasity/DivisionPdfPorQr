@@ -67,14 +67,18 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
         for (const { file, qrData, pageIdx } of qrResults) {
             if (qrData && qrData.startsWith("SEP|")) {
                 const nuevoCodigo = qrData.split("|")[1]?.trim() || "UNKNOWN";
+
+                // Si ya teníamos un bloque acumulado, lo guardamos
                 if (bloqueActual.length) {
                     bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual || "UNKNOWN" });
                 }
-                bloqueActual = [{ file, pageIdx }];
+
+                // Iniciamos el nuevo bloque. Marcamos la primera página como separador.
+                bloqueActual = [{ file, pageIdx, esSeparador: true }];
                 codigoActual = nuevoCodigo;
                 continue;
             }
-            bloqueActual.push({ file, pageIdx });
+            bloqueActual.push({ file, pageIdx, esSeparador: false });
         }
 
         if (bloqueActual.length) {
@@ -110,16 +114,25 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
         bloques.forEach((bloque) => {
             uploadTasks.push((async () => {
                 const nuevoPdf = await PDFDocument.create();
-                const indices = bloque.files.map(f => f.pageIdx);
 
-                // Aplicación de Batch Copying para segmentos
+                // FILTRO: Solo tomamos los índices de las páginas que NO son separadores
+                const indices = bloque.files
+                    .filter(f => f.esSeparador === false)
+                    .map(f => f.pageIdx);
+
+                // Si el bloque quedó vacío (por ejemplo, dos separadores seguidos), no creamos PDF
+                if (indices.length === 0) {
+                    console.warn(`[WARN] [SKIP] Segment [${bloque.codigoCategoria}] is empty after removing separator.`);
+                    return null;
+                }
+
                 const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
                 copiedPages.forEach(p => nuevoPdf.addPage(p));
 
                 const bytes = await nuevoPdf.save();
                 const nombrePdf = `${bloque.codigoCategoria}_${idCaratula}.pdf`;
                 const url = await saveToDrive(Buffer.from(bytes), nombrePdf, folderId);
-                console.log(`[INFO] [UPLOAD] Segment block [${bloque.codigoCategoria}] stored successfully.`);
+
                 return {
                     categoria: bloque.codigoCategoria,
                     url: url
@@ -127,7 +140,9 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
             })());
         });
 
-        const pdfsResult = await Promise.all(uploadTasks);
+        // Al final, filtramos los nulos en caso de bloques vacíos
+        const pdfsResultRaw = await Promise.all(uploadTasks);
+        const pdfsResult = pdfsResultRaw.filter(res => res !== null);
 
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
         console.log(`[SUCCESS] [JOB_FINISHED] Execution time: ${duration}s`);

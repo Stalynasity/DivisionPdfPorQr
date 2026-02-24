@@ -3,7 +3,7 @@ import { connection } from "../config/redis.js";
 import { processPdfSplit } from "../services/split.service.js";
 import { downloadFromDrive, moveFile } from "../services/drive.service.js";
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
-import { getDataFromExcel } from "../services/excel.service.js";
+import { getDataFromExcel, updateSheetRow } from "../services/excel.service.js";
 import fs from "fs-extra";
 import dotenv from "dotenv";
 import path from "path";
@@ -27,6 +27,9 @@ const processor = async (job) => {
             return;
         }
 
+        // Marcar en el Excel que el proceso inició
+        await updateSheetRow(excelMetadata.rowNumber, "ESTADO_CARGA", "Procesando split");
+
         pdfLocalPath = await downloadFromDrive(fileId, job.id);
 
         // 1. Ejecutamos el split y obtenemos la metadata de los archivos subidos
@@ -44,6 +47,9 @@ const processor = async (job) => {
 
         await fs.writeJson(jsonPath, finalData, { spaces: 2 });
         console.log(`[JSON] Metadata guardada en: ${jsonPath}`);
+
+        // ACTUALIZACIÓN EN EXCEL CON RESULTADOS
+        await updateSheetRow(excelMetadata.rowNumber, "ESTADO_CARGA", "Split completado enviado a Drive");
 
         // 3. Mover archivo original en Drive a PROCESADOS
         await moveFile(fileId, SYSTEM_FOLDERS.PROCESADOS);
