@@ -15,7 +15,6 @@ app.listen(3010, () => {
     
     // Definimos la función de rastreo
     const startMonitoring = async () => {
-        console.log("[CRON] Revisando carpeta de entrada...");
         try {
             await watchInputFolder();
         } catch (error) {
