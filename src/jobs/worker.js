@@ -77,7 +77,7 @@ const processor = async (job) => {
         console.log(`${logPrefix} 📄 JSON de metadata generado: ${jsonFileName}`);
 
         // --- FINALIZACIÓN ---
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", "Separación completada con éxito" + ` | Ticket:  tic-${job.id}`);
+        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", "FINALIZACION EXITOSA" + ` | Ticket:  tic-${job.id}`);
         await updateSheetRow(excelMetadata.rowNumber, "monitoreo", "Ticket_procesados", job.id);
 
         await moveFile(fileId, SYSTEM_FOLDERS.PROCESADOS);

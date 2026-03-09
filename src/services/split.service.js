@@ -96,7 +96,7 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, targetDriveFolderI
                 const nombreCompleto = `AUTOMATICO_${DataExcelCaratula.ID_Caratula}.pdf`;
                 const url = await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
 
-                await updateSheetRow(DataExcelCaratula.rowNumber, "maestro", "Enlace_Pdf", "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto);
+                await updateSheetRow(DataExcelCaratula.rowNumber, "maestro", "Pdf_Completo", "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto);
                 console.log(`✅ [JOB:${jobId}] [UPLOAD] PDF COMPLETO guardado.`);
                 return { categoria: "PDF_COMPLETO", url };
             } catch (e) {
