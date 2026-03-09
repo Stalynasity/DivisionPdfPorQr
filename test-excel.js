@@ -19,7 +19,7 @@ async function runTest() {
 
             // 2. Prueba de Escritura
             console.log(`✍️ Intentando actualizar estado en la fila ${data.rowNumber}...`);
-            await updateSheetRow(data.rowNumber, "ESTADO_CARGA", "TEST_EXITOSO");
+            await updateSheetRow(data.rowNumber, "maestro", "ESTADO_CARGA", "TEST_EXITOSO");
             
             console.log("✅ PROCESO COMPLETADO: Revisa tu Google Sheet, la columna 'Estado' debería decir 'TEST_EXITOSO'.");
         } else {

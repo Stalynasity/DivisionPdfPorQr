@@ -6,40 +6,41 @@ import { saveToDrive } from "./drive.service.js";
 import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
 import pLimit from "p-limit";
 import path from "path";
+import { updateSheetRow, insertDocumentRowsBatch } from "../services/excel.service.js";
 
-export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
+export const processPdfSplit = async (pdfPath, tenant, jobId, targetDriveFolderId, excelMetadata) => {
     const startTime = Date.now();
-    const tmpDir = path.join(PATHS.tempImg, `job-${jobId}`); // Carpeta privada
+    const tmpDir = path.join(PATHS.tempImg, `job-${jobId}`);
     const folderId = TENANT_FOLDERS[tenant];
+    /** @type {import('../interfaces/excel.interface.js').ExcelMetadata} */
+    const DataExcelCaratula = excelMetadata;
+    console.table(DataExcelCaratula);
 
-    console.log(`[INFO] [SYSTEM_START] Processing request for Tenant: [${tenant.toUpperCase()}]`);
-    console.log(`[INFO] [FILE_PATH] Source: ${pdfPath}`);
+    // Log de inicio con metadata clave
+    console.log(`\n🚀 [JOB:${jobId}] >>> INICIANDO PROCESO`);
+    console.log(`   | Tenant: ${tenant.toUpperCase()} | ID_Caratula: ${DataExcelCaratula.ID_Caratula}`);
+    console.log(`   | Archivo: ${path.basename(pdfPath)}`);
 
     if (!folderId) {
-        console.error(`[ERROR] [CONFIG_FAULT] Tenant '${tenant}' is not registered in TENANT_FOLDERS.`);
+        console.error(`❌ [JOB:${jobId}] [CONFIG_ERROR] Tenant '${tenant}' no existe en TENANT_FOLDERS.`);
         throw new Error(`Tenant no registrado: ${tenant}`);
     }
 
     try {
-        // STEP 0: Limpieza de directorios
         await fs.ensureDir(tmpDir);
         await fs.emptyDir(tmpDir);
-        console.log(`[INFO] [CLEANUP] Workspace initialized: ${tmpDir}`);
 
-        // STEP 1: Renderizado de PDF
+        // --- RENDERIZADO ---
         const renderStart = Date.now();
         await renderPdfToImages(pdfPath, tmpDir);
-        console.log(`[INFO] [RENDER] PDF-to-Image conversion completed in ${((Date.now() - renderStart) / 1000).toFixed(2)}s`);
-
-        // STEP 2: Validación de archivos
         const files = (await fs.readdir(tmpDir)).sort();
-        if (!files.length) throw new Error("No images were generated from the source PDF.");
-        console.log(`[INFO] [ANALYSIS] Detected ${files.length} pages for processing.`);
 
-        // STEP 3: Reconocimiento de QR
-        console.log("[INFO] [QR_SCAN] Initializing barcode recognition...");
+        if (!files.length) throw new Error("PDF vacío o error en renderizado.");
+        console.log(`📸 [JOB:${jobId}] [RENDER] OK: ${files.length} páginas generadas en ${((Date.now() - renderStart) / 1000).toFixed(2)}s`);
+
+        // --- LECTURA QR ---
+        console.log(`🔍 [JOB:${jobId}] [QR] Escaneando códigos...`);
         const limit = pLimit(4);
-
         const qrResults = await Promise.all(
             files.slice(1).map(file => limit(async () => {
                 const imgPath = path.join(tmpDir, file);
@@ -49,123 +50,139 @@ export const processPdfSplit = async (pdfPath, tenant, jobId, idCaratula) => {
                     qrData = await readQR(imgPath);
                     if (qrData) {
                         qrData = qrData.replace(/^"+|"+$/g, "").trim();
-                        console.log(`[DEBUG] [QR_FOUND] Page ${pageIdx + 1}: ${qrData}`);
                     }
                 } catch (err) {
-                    console.warn(`[WARN] [QR_READ_FAIL] Page ${pageIdx + 1}: ${err.message}`);
+                    console.warn(`⚠️ [JOB:${jobId}] [QR_WARN] Pág ${pageIdx + 1}: ${err.message}`);
                 }
                 return { file, qrData, pageIdx };
             }))
         );
 
-        // STEP 4: Segmentación lógica
-        console.log("[INFO] [SEGMENTATION] Organizing document blocks based on separators...");
+        // --- SEGMENTACIÓN ---
         const bloques = [];
         let bloqueActual = [];
         let codigoActual = null;
 
         for (const { file, qrData, pageIdx } of qrResults) {
-            if (qrData && qrData.startsWith("SEP|")) {
+            if (qrData?.startsWith("SEP|")) {
                 const nuevoCodigo = qrData.split("|")[1]?.trim() || "UNKNOWN";
-
-                // Si ya teníamos un bloque acumulado, lo guardamos
                 if (bloqueActual.length) {
                     bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual || "UNKNOWN" });
                 }
-
-                // Iniciamos el nuevo bloque. Marcamos la primera página como separador.
                 bloqueActual = [{ file, pageIdx, esSeparador: true }];
                 codigoActual = nuevoCodigo;
                 continue;
             }
             bloqueActual.push({ file, pageIdx, esSeparador: false });
         }
+        if (bloqueActual.length) bloques.push({ files: bloqueActual, codigoCategoria: codigoActual || "UNKNOWN" });
 
-        if (bloqueActual.length) {
-            bloques.push({ files: bloqueActual, codigoCategoria: codigoActual || "UNKNOWN" });
-        }
-        console.log(`[INFO] [SEGMENTATION_COMPLETE] Total segments identified: ${bloques.length}`);
+        console.log(`📦 [JOB:${jobId}] [SEGMENT] Se identificaron ${bloques.length} bloques lógicos.`);
 
-        // STEP 5: Generación de PDF y Carga masiva (Batch Copying)
-        console.log("[INFO] [OUTPUT_GEN] Initializing concurrent upload and batch copying...");
+        // --- GENERACIÓN Y CARGA ---
         const pdfData = await fs.readFile(pdfPath);
         const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
         const uploadTasks = [];
 
-        // 1. PDF Íntegro
+        // 1. Logica PDF Completo
         uploadTasks.push((async () => {
-            const pdfCompleto = await PDFDocument.create();
-            const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
+            try {
+                const pdfCompleto = await PDFDocument.create();
+                const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
+                const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
+                copiedPages.forEach(p => pdfCompleto.addPage(p));
+                const bytes = await pdfCompleto.save();
 
-            // TÉCNICA: Batch Copying - Copia de bajo nivel de objetos PDF en una sola operación
-            const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
-            copiedPages.forEach(p => pdfCompleto.addPage(p));
+                const nombreCompleto = `AUTOMATICO_${DataExcelCaratula.ID_Caratula}.pdf`;
+                const url = await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
 
-            const bytes = await pdfCompleto.save();
-            const url = await saveToDrive(Buffer.from(bytes), `GEN_AUTOMATICO_${idCaratula}.pdf`, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
-            console.log(`[INFO] [UPLOAD] Main document stored for: `, TENANT_FOLDERS.Automatico);
-            return {
-                categoria: "PDF_COMPLETO",
-                url: url
-            };
+                await updateSheetRow(DataExcelCaratula.rowNumber, "maestro", "Enlace_Pdf", "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto);
+                console.log(`✅ [JOB:${jobId}] [UPLOAD] PDF COMPLETO guardado.`);
+                return { categoria: "PDF_COMPLETO", url };
+            } catch (e) {
+                console.error(`❌ [JOB:${jobId}] [FATAL] Error en PDF Completo: ${e.message}`);
+                return null;
+            }
         })());
 
-        // 2. Segmentos por separador
-        bloques.forEach((bloque) => {
+        // 2. Logica Segmentos
+        const totalBloques = bloques.length;
+        bloques.forEach((bloque, index) => {
             uploadTasks.push((async () => {
-                const nuevoPdf = await PDFDocument.create();
+                try {
+                    const nuevoPdf = await PDFDocument.create();
+                    const indices = bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
 
-                // FILTRO: Solo tomamos los índices de las páginas que NO son separadores
-                const indices = bloque.files
-                    .filter(f => f.esSeparador === false)
-                    .map(f => f.pageIdx);
+                    if (indices.length === 0) {
+                        console.warn(`[JOB:${jobId}] ⚠️ Bloque [${bloque.codigoCategoria}] omitido: No contiene páginas válidas.`);
+                        return null;
+                    }
 
-                // Si el bloque quedó vacío (por ejemplo, dos separadores seguidos), no creamos PDF
-                if (indices.length === 0) {
-                    console.warn(`[WARN] [SKIP] Segment [${bloque.codigoCategoria}] is empty after removing separator.`);
+                    const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
+                    copiedPages.forEach(p => nuevoPdf.addPage(p));
+                    const bytes = await nuevoPdf.save();
+
+                    const nombreSegmento = `${bloque.codigoCategoria}_${DataExcelCaratula.ID_Caratula}.pdf`;
+
+                    console.log(`[JOB:${jobId}] ⬆️ Subiendo [${index + 1}/${totalBloques}]: ${nombreSegmento} (${indices.length} pág)...`);
+                    const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
+
+                    console.log(`[JOB:${jobId}] ✅ [UPLOAD_OK] Segmento [${bloque.codigoCategoria}] en Drive.`);
+                    return { categoria: bloque.codigoCategoria, url };
+                } catch (e) {
+                    console.error(`[JOB:${jobId}] ❌ [SEGMENT_FAIL] Error en bloque ${bloque.codigoCategoria}: ${e.message}`);
                     return null;
                 }
-
-                const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
-                copiedPages.forEach(p => nuevoPdf.addPage(p));
-
-                const bytes = await nuevoPdf.save();
-                const nombrePdf = `${bloque.codigoCategoria}_${idCaratula}.pdf`;
-                const url = await saveToDrive(Buffer.from(bytes), nombrePdf, folderId);
-
-                return {
-                    categoria: bloque.codigoCategoria,
-                    url: url
-                };
             })());
         });
 
-        // Al final, filtramos los nulos en caso de bloques vacíos
-        const pdfsResultRaw = await Promise.all(uploadTasks);
-        const pdfsResult = pdfsResultRaw.filter(res => res !== null);
+        const rawResults = await Promise.all(uploadTasks);
+        const validResults = rawResults.filter(r => 
+            r !== null && r.categoria !== "PDF_COMPLETO"
+        );
 
+        // --- REGISTRO EXCEL ---
+        const excelRows = validResults.map(res => {
+            const fechaAhora = new Date().toISOString().replace('T', ' ').split('.')[0];
+            
+            // Ya no necesitamos el ternario aquí porque PDF_COMPLETO nunca llegará a este punto
+            const nombrePdf = `${res.categoria}_${DataExcelCaratula.ID_Caratula}.pdf`;
+
+            return [
+                res.url,
+                nombrePdf,
+                DataExcelCaratula.ID_Caratula,
+                res.categoria,
+                DataExcelCaratula.No_Identificacion,
+                `https://drive.google.com/file/d/${res.url}/view`,
+                fechaAhora
+            ];
+        });
+
+        if (excelRows.length > 0) {
+            try {
+                await insertDocumentRowsBatch(excelRows, DataExcelCaratula.APP_ASIGNADA);
+                console.log(`[JOB:${jobId}] ✨ [EXCEL_OK] Registros insertados correctamente.`);
+            } catch (e) {
+                console.error(`[JOB:${jobId}]  [EXCEL_ERROR] Fallo al insertar filas: ${e.message}`);
+            }
+        }
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.log(`[SUCCESS] [JOB_FINISHED] Execution time: ${duration}s`);
+        console.log(`🏁 [JOB:${jobId}] >>> FINITO en ${duration}s\n`);
 
-        //ESUMEN PARA EL JSON
         return {
-            idCaratula,
+            idCaratula: DataExcelCaratula.ID_Caratula,
             jobId,
-            tenant,
-            fechaProcesado: new Date().toISOString(),
-            duracionSegundos: duration,
-            archivos: pdfsResult // Lista de URLs/IDs retornados por saveToDrive
+            archivos: validResults
         };
 
     } catch (err) {
-        console.error(`[CRITICAL] [JOB_FAILED] Job ${jobId}: ${err.message}`);
+        console.error(`🚨 [JOB:${jobId}] [CRITICAL_FAIL] Error global: ${err.message}`);
         throw err;
     } finally {
-        // LIMPIEZA ATÓMICA: Solo borramos lo que este Job creó
         await Promise.all([
-            fs.remove(tmpDir).catch(() => { }), // Borra carpeta de imágenes del job
-            fs.remove(pdfPath).catch(() => { }) // Borra el PDF original descargado
+            fs.remove(tmpDir).catch(() => { }),
+            fs.remove(pdfPath).catch(() => { })
         ]);
-        console.log(`[INFO] [CLEANUP] Resources for Job ${jobId} released.`);
     }
 };

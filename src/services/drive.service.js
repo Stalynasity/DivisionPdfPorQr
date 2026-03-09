@@ -116,3 +116,43 @@ export const moveFile = async (fileId, targetFolderId) => {
         throw error;
     }
 };
+
+
+// ========================= GET OR CREATE FOLDER PATH =========================
+/**
+ * Crea o busca una ruta de carpetas anidadas en Drive
+ * @param {string} rootFolderId ID de la carpeta principal (DOCUMENTOS DIGITALIZADOS)
+ * @param {string[]} pathArray Array de nombres ['Stalyn.asitimbay', '0954400222', 'OROAVISOS']
+ */
+export const getOrCreateFolderPath = async (rootFolderId, pathArray) => {
+    const drive = await getDriveClient();
+    let currentParentId = rootFolderId;
+
+    for (const folderName of pathArray) {
+        if (!folderName) continue;
+        
+        // 1. Buscar si la carpeta ya existe bajo el padre actual
+        const query = `name = '${folderName}' and '${currentParentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+        const res = await drive.files.list({ q: query, fields: 'files(id, name)', supportsAllDrives: true, includeItemsFromAllDrives: true });
+
+        if (res.data.files.length > 0) {
+            // Existe, pasamos al siguiente nivel
+            currentParentId = res.data.files[0].id;
+        } else {
+            // No existe, la creamos
+            console.log(`[DRIVE] Creando carpeta: ${folderName}`);
+            const folderMetadata = {
+                name: folderName,
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: [currentParentId]
+            };
+            const newFolder = await drive.files.create({
+                resource: folderMetadata,
+                fields: 'id',
+                supportsAllDrives: true
+            });
+            currentParentId = newFolder.data.id;
+        }
+    }
+    return currentParentId;
+};
