@@ -13,22 +13,24 @@ export const watchInputFolder = async () => {
     try {
         const res = await drive.files.list({
             q: `'${SYSTEM_FOLDERS.ENTRADA}' in parents and mimeType = 'application/pdf' and trashed = false`,
+            pageSize: 20,
             fields: "files(id, name)",
+            //supportsAllDrives: true,
+            //includeItemsFromAllDrives: true
         });
 
         const files = res.data.files;
         if (!files || files.length === 0) return;
 
         for (const file of files) {
-            console.log(`\n--- ESCANEANDO: ${file.name} ---`);
             let localPath = null;
             let tempImgDir = null;
 
             try {
-                // 1. Descarga rápida para pre-escaneo
-                localPath = await downloadFromDrive(file.id, `pre-${file.id}`);
+                // Log único de inicio de proceso
+                console.log(`INFO: PROCESSING_FILE - Name: ${file.name}`);
 
-                // 2. Renderizado de pág 1
+                localPath = await downloadFromDrive(file.id, `pre-${file.id}`);
                 tempImgDir = path.join(PATHS.tempImg, `scan-${file.id}`);
                 await fs.ensureDir(tempImgDir);
                 await renderPdfToImages(localPath, tempImgDir, true);
@@ -36,64 +38,50 @@ export const watchInputFolder = async () => {
                 const images = (await fs.readdir(tempImgDir)).sort();
                 const firstPagePath = path.join(tempImgDir, images[0]);
 
-                // 3. Lectura de QR
                 let idCaratulaRaw = await readQR(firstPagePath);
 
+                // Casos de rechazo lógico (WARN)
                 if (!idCaratulaRaw) {
-                    console.error(` [RECHAZADO] Sin QR: ${file.name}`);
+                    console.warn(`WARN: REJECTED - No se detectó QR en: ${file.name}`);
                     await moveFile(file.id, SYSTEM_FOLDERS.ERRORES);
                     continue;
                 }
 
                 const idLimpio = idCaratulaRaw.replace(/^"+|"+$/g, "").trim();
-
-                // 4. Verificación en Maestro
                 const rowNumber = await existsIdCaratula(idLimpio);
 
                 if (!rowNumber) {
-                    console.error(` [RECHAZADO] ID ${idLimpio} no existe en Maestro.`);
+                    console.warn(`WARN: REJECTED - ID ${idLimpio} no existe en Maestro | Archivo: ${file.name}`);
                     await moveFile(file.id, SYSTEM_FOLDERS.ERRORES);
                     continue;
                 }
 
-                console.log(`✅ [VALIDADO] ID: ${idLimpio} encontrado en fila ${rowNumber}`);
-
-                // 5. Mover a TRÁNSITO antes de encolar (evita duplicados)
                 await moveFile(file.id, SYSTEM_FOLDERS.TRANSITO);
 
-                // 6. ENCOLAR Y OBTENER EL JOB ID
                 const job = await splitQueue.add("split", {
                     fileId: file.id,
                     fileName: file.name,
-                    idCaratula: idLimpio,
-                    tenant: "Automatico"
+                    idCaratula: idLimpio
                 });
-                
-                await updateSheetRow(
-                    rowNumber, 
-                    "maestro", 
-                    "Estado_Carga", 
-                    `Archivo recibido correctamente. Su Ticket de seguimiento: ${job.id}`
-                );
 
-                await updateSheetRow(
-                    2, 
-                    "monitoreo", 
-                    "Ultimo_Ticket", 
-                    job.id
-                );
+                // Log de éxito final: Resume toda la operación
+                console.log(`INFO: COMPLETED - File: ${file.name} | ID: ${idLimpio} | Ticket: ${job.id}`);
+
+                await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Archivo recibido. Ticket: ${job.id}`);
+                await updateSheetRow(2, "monitoreo", "Ultimo_Ticket", job.id);
 
             } catch (err) {
-                console.error(`🚨 [ERROR] Falló análisis de ${file.name}:`, err.message);
+                // Solo reportamos el error si realmente algo falló en la ejecución
+                console.error(`ERROR: FAILED_FILE - ${file.name} | Reason: ${err.message}`);
                 try {
                     await moveFile(file.id, SYSTEM_FOLDERS.ERRORES);
-                } catch (e) { /* Error silencioso */ }
+                } catch (e) { }
             } finally {
                 if (localPath) await fs.remove(localPath).catch(() => { });
                 if (tempImgDir) await fs.remove(tempImgDir).catch(() => { });
             }
         }
     } catch (error) {
-        console.error("💀 [MONITOR FATAL ERROR]:", error);
+        console.error(`CRITICAL: MONITOR_FATAL - ${error.message}`);
     }
 };

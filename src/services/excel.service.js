@@ -6,7 +6,7 @@ dotenv.config();
 
 const SPREADSHEET_ID = process.env.EXCEL_DIGITALIZACION;
 const SPREADSHEET_ID_MONITOREO = process.env.EXCEL_MONITOREO_ID;
-const SHEET_NAME = process.env.SHEET_NAME_MAESTRO;
+const SHEET_NAME_MAESTRO = process.env.SHEET_NAME_MAESTRO;
 
 let sheetsInstance;
 
@@ -14,60 +14,34 @@ const getSheetsClient = async () => {
     if (!sheetsInstance) {
         const auth = await getOAuthClient();
         sheetsInstance = google.sheets({ version: "v4", auth });
+        console.log("INFO: SHEETS_READY - Cliente de Google Sheets inicializado");
     }
     return sheetsInstance;
 };
-export const asignacionDriveUser = async () => {
-    try {
-        const sheets = await getSheetsClient();
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:A`,
-        });
-        const rows = response.data.values;
-        if (!rows || rows.length === 0) return null;
-    }
-    catch (error) {
-        console.error(`[SHEETS ERROR] ${error.message}`);
-        throw error;
-    }
-};
-
 
 /**
- * Inserta filas con lógica de reintento (Exponential Backoff)
+ * Inserta filas con lógica de Exponential Backoff (Resiliencia SRE)
  */
 export const insertDocumentRowsBatch = async (rowsArray, App_asignada, retries = 3, delay = 2000) => {
     const batchSize = rowsArray?.length || 0;
+    if (batchSize === 0) return;
 
     for (let i = 0; i < retries; i++) {
         try {
-            if (batchSize === 0) {
-                console.log(`[SHEETS] Omitiendo batch: No hay filas para insertar.`);
-                return;
-            }
-
-            console.log(`[SHEETS]  Intentando insertar batch de ${batchSize} filas en [${App_asignada}]... (Intento ${i + 1}/${retries})`);
-
             const sheets = await getSheetsClient();
-            let spreadsheetId = "";
+            
+            // Mapeo dinámico de IDs (O - Open/Closed Principle)
+            const apps = {
+                "APP-1": process.env.APP1_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-2": process.env.APP2_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-3": process.env.APP3_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-4": process.env.APP4_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-5": process.env.APP5_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-6": process.env.APP6_EXCEL_ARCHIVOS_DRIVE_ID,
+            };
 
-            // Selección dinámica del Spreadsheet según la App asignada
-            switch (App_asignada) {
-                case "APP-1": spreadsheetId = process.env.APP1_EXCEL_ARCHIVOS_DRIVE_ID; break;
-                case "APP-2": spreadsheetId = process.env.APP2_EXCEL_ARCHIVOS_DRIVE_ID; break;
-                case "APP-3": spreadsheetId = process.env.APP3_EXCEL_ARCHIVOS_DRIVE_ID; break;
-                case "APP-4": spreadsheetId = process.env.APP4_EXCEL_ARCHIVOS_DRIVE_ID; break;
-                case "APP-5": spreadsheetId = process.env.APP5_EXCEL_ARCHIVOS_DRIVE_ID; break;
-                case "APP-6": spreadsheetId = process.env.APP6_EXCEL_ARCHIVOS_DRIVE_ID; break;
-                default:
-                    // CORRECCIÓN: Usamos App_asignada que es la variable real
-                    throw new Error(`La aplicación "${App_asignada}" no está configurada en el sistema.`);
-            }
-
-            if (!spreadsheetId) {
-                throw new Error(`El ID de Spreadsheet para ${App_asignada} está vacío en el archivo .env`);
-            }
+            const spreadsheetId = apps[App_asignada];
+            if (!spreadsheetId) throw new Error(`APP_NOT_CONFIGURED: ${App_asignada}`);
 
             const sheetName = process.env.SHEET_NAME_DRIVE || "Archivos_Drive";
 
@@ -78,160 +52,119 @@ export const insertDocumentRowsBatch = async (rowsArray, App_asignada, retries =
                 requestBody: { values: rowsArray }
             });
 
-            const updatedCells = response.data.updates?.updatedCells || 0;
-            console.log(`[SHEETS] ✅ Batch exitoso: ${updatedCells} celdas actualizadas en [${App_asignada}] > ${sheetName}.`);
             return;
 
         } catch (error) {
-            const isRateLimit = error.code === 429 || error.message.toLowerCase().includes('quota');
-
+            const isRateLimit = error.code === 429 || error.message.includes('quota');
             if (isRateLimit && i < retries - 1) {
-                console.warn(`[SHEETS ⚠️] Límite de cuota en ${App_asignada}. Reintentando en ${delay / 1000}s...`);
+                console.warn(`WARN: SHEETS_QUOTA_HIT - Reintentando en ${delay/1000}s (Intento ${i+1})`);
                 await new Promise(res => setTimeout(res, delay));
                 delay *= 2;
             } else {
-                console.error(`[SHEETS ❌] ERROR CRÍTICO en [${App_asignada}]: ${error.message}`);
-                if (error.errors) console.error(`           Detalles API: ${JSON.stringify(error.errors)}`);
-                throw error; // Re-lanzamos para que el servicio de arriba lo capture
+                console.error(`ERROR: SHEETS_APPEND_FAILED - App: ${App_asignada} | Msg: ${error.message}`);
+                throw error;
             }
         }
     }
 };
 
-
-
 /**
- * Busca un ID y retorna toda la fila como objeto
+ * Recupera datos de una fila específica (Single Responsibility)
  */
 export const getDataFromExcel = async (idBusqueda) => {
     try {
         const sheets = await getSheetsClient();
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:AZ`,
+            range: `${SHEET_NAME_MAESTRO}!A:AZ`,
         });
 
         const rows = response.data.values;
         if (!rows || rows.length === 0) return null;
 
         const headers = rows[0];
-        const cleanSearchId = String(idBusqueda).trim().toLowerCase();
-
-        // Buscamos el índice de la columna ID_Caratula dinámicamente
         const idColIndex = headers.indexOf("ID_Caratula");
+        const cleanId = String(idBusqueda).trim().toLowerCase();
 
-        const rowIndex = rows.findIndex((row, idx) =>
-            idx > 0 && String(row[idColIndex] ?? "").trim().toLowerCase() === cleanSearchId
+        const rowIndex = rows.findIndex((row, idx) => 
+            idx > 0 && String(row[idColIndex] ?? "").trim().toLowerCase() === cleanId
         );
 
         if (rowIndex === -1) return null;
 
-        const rowData = rows[rowIndex];
-
-        // Retornamos objeto con data y el número de fila (útil para actualizar luego)
         const result = headers.reduce((acc, header, index) => {
-            acc[header] = rowData[index] || "";
+            acc[header] = rows[rowIndex][index] || "";
             return acc;
-        }, {});
+        }, { rowNumber: rowIndex + 1 });
 
-        return { ...result, rowNumber: rowIndex + 1 };
-
+        return result;
     } catch (error) {
-        console.error(`[SHEETS ERROR] ${error.message}`);
+        console.error(`ERROR: SHEETS_FETCH_FAILED - ID: ${idBusqueda} | Msg: ${error.message}`);
         throw error;
     }
 };
 
 /**
- * Actualiza una celda específica con manejo de errores y logs descriptivos
+ * Actualiza una celda con mapeo automático de columnas
  */
 export const updateSheetRow = async (rowNumber, Tabla, columnName, value) => {
-    let SPREADSHEET_ID_CASE = "";
-    let SHEET_NAME = process.env.SHEET_NAME_MAESTRO;
-
     try {
-        // Determinamos qué Google Sheet usar
-        switch (Tabla) {
-            case "monitoreo":
-                SPREADSHEET_ID_CASE = SPREADSHEET_ID_MONITOREO;
-                SHEET_NAME = process.env.SHEET_NAME_MONITOREO;
-                break;
-            case "maestro":
-                SPREADSHEET_ID_CASE = SPREADSHEET_ID;
-                break;
-            default:
-                throw new Error(`Tabla "${Tabla}" no reconocida en el sistema`);
-        }
+        const config = {
+            monitoreo: { id: SPREADSHEET_ID_MONITOREO, sheet: process.env.SHEET_NAME_MONITOREO },
+            maestro: { id: SPREADSHEET_ID, sheet: SHEET_NAME_MAESTRO }
+        };
 
-        console.log(`[SHEETS] Intentando actualizar: [Tabla: ${Tabla}] [Fila: ${rowNumber}] [Columna: ${columnName}]`);
+        const target = config[Tabla];
+        if (!target) throw new Error(`INVALID_TABLE: ${Tabla}`);
 
         const sheets = await getSheetsClient();
-
-        // 2. Obtener encabezados para mapear letra de columna
+        
+        // Obtener encabezados para hallar la columna
         const headerRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID_CASE,
-            range: `${SHEET_NAME}!1:1`,
+            spreadsheetId: target.id,
+            range: `${target.sheet}!1:1`,
         });
 
-        if (!headerRes.data.values || headerRes.data.values.length === 0) {
-            throw new Error(`No se pudieron obtener los encabezados de la hoja ${SHEET_NAME}`);
-        }
-
-        const headers = headerRes.data.values[0];
+        const headers = headerRes.data.values?.[0] || [];
         const colIndex = headers.indexOf(columnName);
+        if (colIndex === -1) throw new Error(`COLUMN_NOT_FOUND: ${columnName}`);
 
-        if (colIndex === -1) {
-            throw new Error(`La columna "${columnName}" no existe en la hoja ${SHEET_NAME}`);
-        }
-
-        // Convertir índice a letra (Nota: esto solo funciona hasta la columna Z)
-        // Para sistemas grandes es mejor una función helper 'indexToLetter'
         const colLetter = String.fromCharCode(65 + colIndex);
-        const rangeTarget = `${SHEET_NAME}!${colLetter}${rowNumber}`;
+        const range = `${target.sheet}!${colLetter}${rowNumber}`;
 
-        // 3. Ejecutar actualización
         await sheets.spreadsheets.values.update({
-            spreadsheetId: SPREADSHEET_ID_CASE,
-            range: rangeTarget,
+            spreadsheetId: target.id,
+            range: range,
             valueInputOption: "USER_ENTERED",
             requestBody: { values: [[value]] }
         });
 
-        console.log(`[SHEETS] ✅ ÉXITO: Celda ${rangeTarget} actualizada con el valor: "${value}"`);
 
     } catch (error) {
-        // Log detallado del fallo para el debug
-        console.error(`[SHEETS UPDATE ERROR] Falló actualización en ${Tabla}: ${error.message}`);
-        // Lanzamos el error para que el Worker sepa que algo falló, 
-        // a menos que prefieras que el proceso siga a pesar del log de Excel.
+        console.error(`ERROR: SHEETS_UPDATE_FAILED - Table: ${Tabla} | Col: ${columnName} | Msg: ${error.message}`);
         throw error;
     }
 };
 
-
+/**
+ * Verificación rápida de existencia
+ */
 export const existsIdCaratula = async (idBusqueda) => {
     try {
         const sheets = await getSheetsClient();
-        const cleanSearchId = String(idBusqueda).trim().toLowerCase();
-
-        // Pedimos solo la columna A para ahorrar ancho de banda y tiempo
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:A`,
+            range: `${SHEET_NAME_MAESTRO}!A:A`,
         });
 
-        const rows = response.data.values;
-        if (!rows || rows.length === 0) return null;
+        const rows = response.data.values || [];
+        const cleanId = String(idBusqueda).trim().toLowerCase();
 
-        // Buscamos el índice. rowIndex + 1 nos da la fila real de Sheets
-        const rowIndex = rows.findIndex((row) =>
-            String(row[0] ?? "").trim().toLowerCase() === cleanSearchId
-        );
-
+        const rowIndex = rows.findIndex(row => String(row[0] ?? "").trim().toLowerCase() === cleanId);
         return rowIndex !== -1 ? rowIndex + 1 : null;
 
     } catch (error) {
-        console.error(`[SHEETS QUICK CHECK ERROR] ${error.message}`);
+        console.error(`ERROR: SHEETS_CHECK_FAILED - Msg: ${error.message}`);
         return null;
     }
 };

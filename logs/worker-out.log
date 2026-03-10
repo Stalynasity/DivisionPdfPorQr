@@ -1,0 +1,114 @@
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-10 07:25:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-10 07:28:58: INFO: WORKER_START - TICKET:3 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | File: ilovepdf_merged.pdf
+2026-03-10 07:28:58: INFO: AUTH_SUCCESS - Sesión de Google Drive recuperada desde token.json
+2026-03-10 07:28:58: INFO: SHEETS_READY - Cliente de Google Sheets inicializado
+2026-03-10 07:29:00: INFO: SHEETS_UPDATE - Table: maestro | Cell: Caratulas_Maestro!L7 | Status: OK
+2026-03-10 07:29:00: INFO: AUTH_SUCCESS - Sesión de Google Drive recuperada desde token.json
+2026-03-10 07:29:00: INFO: DRIVE_READY - Cliente de Google Drive inicializado
+2026-03-10 07:29:01: INFO: DRIVE_FOLDER_CREATED - Name: stalynasi08 | Parent: 131h_ch8heIPXfJRifHCSFbVTR-_fWrVU
+2026-03-10 07:29:02: INFO: DRIVE_FOLDER_CREATED - Name: 1231243423 | Parent: 1iEKAhXda4yjh8KS92XvLXlHmjoeheyeq
+2026-03-10 07:29:02: INFO: DRIVE_FOLDER_CREATED - Name: Actualización de datos P. Natural | Parent: 1hV4hTUQ-SDOSO6Yd4HzGlVjviSfw7Un-
+2026-03-10 07:29:04: INFO: DRIVE_DOWNLOAD - File: 1u4LjGWJM8Wt0F1_gI-cMG7vsiMs01_M9 | Dest: 3.pdf
+2026-03-10 07:29:04: INFO: RENDER_START - Mode: FULL_PDF | File: job-3.pdf
+2026-03-10 07:30:02: INFO: SPLIT_RENDER - JOB:3 | Pages: 19
+2026-03-10 07:30:05: INFO: SPLIT_SEGMENT - JOB:3 | Blocks_Found: 3
+2026-03-10 07:30:06: INFO: DRIVE_UPLOAD - Name: DP - PSB_CAR_1231243423_Actualización de datos P. Natural_260309015101.pdf | New_ID: 1K_jkLrrpEPUd5Mvu4SR1Rd_N8fPIWEoz
+2026-03-10 07:30:06: INFO: DRIVE_UPLOAD - Name: DP - IDEN_CAR_1231243423_Actualización de datos P. Natural_260309015101.pdf | New_ID: 190KcIvffrI01CZM5T28uOd7gG5sboJKU
+2026-03-10 07:30:07: INFO: DRIVE_UPLOAD - Name: AUTOMATICO_CAR_1231243423_Actualización de datos P. Natural_260309015101.pdf | New_ID: 1kGY9mR6RidvVECaPT4oaWW2X9mlB3zTN
+2026-03-10 07:30:07: INFO: DRIVE_UPLOAD - Name: DP - DEN_CAR_1231243423_Actualización de datos P. Natural_260309015101.pdf | New_ID: 1jYaJR8oFYEOP0OCJHE8wzbOv5GGVMaxU
+2026-03-10 07:30:08: INFO: SHEETS_UPDATE - Table: maestro | Cell: Caratulas_Maestro!N7 | Status: OK
+2026-03-10 07:30:09: INFO: SHEETS_APPEND - App: APP-1 | Rows: 3
+2026-03-10 07:30:09: INFO: EXCEL_BATCH_SUCCESS - JOB:3 | Rows: 3
+2026-03-10 07:30:09: INFO: SPLIT_COMPLETED - JOB:3 | Duration: 64.36s
+2026-03-10 07:30:09: INFO: SHEETS_UPDATE - Table: maestro | Cell: Caratulas_Maestro!L7 | Status: OK
+2026-03-10 07:30:10: INFO: SHEETS_UPDATE - Table: monitoreo | Cell: Monitoreo_Ticket!A7 | Status: OK
+2026-03-10 07:30:10: INFO: DRIVE_MOVE - File: 1u4LjGWJM8Wt0F1_gI-cMG7vsiMs01_M9 | Target_Folder: 1yVSIgrK-V3hHR1pjTggjNoRaZ8E-SsLf
+2026-03-10 07:30:10: INFO: WORKER_SUCCESS - TICKET:3 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | Time: 72.05s | Meta: meta_CAR_1231243423_Actualización de datos P. Natural_260309015101_3.json
+2026-03-10 07:45:28: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-10 07:45:28: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-10 07:45:28: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-10 07:45:28:  Worker cerrado. Proceso finalizado.
+2026-03-10 07:45:28:  Worker cerrado. Proceso finalizado.
+2026-03-10 07:45:28:  Worker cerrado. Proceso finalizado.
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-10 07:45:31: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-10 07:46:08: INFO: WORKER_START - TICKET:4 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | File: ilovepdf_merged.pdf
+2026-03-10 07:46:08: INFO: SHEETS_REUSE - no conectado de Google Sheets
+2026-03-10 07:46:09: INFO: SHEETS_UPDATE - Table: maestro | Cell: Caratulas_Maestro!L7 | Status: OK
+2026-03-10 07:46:13: INFO: RENDER_START - Mode: FULL_PDF | File: job-4.pdf
+2026-03-10 07:46:49: INFO: SPLIT_RENDER - JOB:4 | Pages: 19
+2026-03-10 07:46:52: INFO: SPLIT_SEGMENT - JOB:4 | Blocks_Found: 3
+2026-03-10 07:46:54: INFO: SHEETS_REUSE - no conectado de Google Sheets
+2026-03-10 07:46:55: INFO: SHEETS_UPDATE - Table: maestro | Cell: Caratulas_Maestro!N7 | Status: OK
+2026-03-10 07:46:55: INFO: SHEETS_REUSE - no conectado de Google Sheets
+2026-03-10 07:46:56: INFO: EXCEL_BATCH_SUCCESS - JOB:4 | Rows: 3
+2026-03-10 07:46:56: INFO: SPLIT_COMPLETED - JOB:4 | Duration: 42.41s
+2026-03-10 07:46:56: INFO: METADATA_SAVED - TICKET:4 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | Path: /app/metadata/meta_CAR_1231243423_Actualizaci_n_de_datos_P__Natural_260309015101_4.json
+2026-03-10 07:46:56: INFO: SHEETS_REUSE - no conectado de Google Sheets
+2026-03-10 07:46:56: INFO: SHEETS_UPDATE - Table: maestro | Cell: Caratulas_Maestro!L7 | Status: OK
+2026-03-10 07:46:56: INFO: SHEETS_REUSE - no conectado de Google Sheets
+2026-03-10 07:46:57: INFO: SHEETS_UPDATE - Table: monitoreo | Cell: Monitoreo_Ticket!A7 | Status: OK
+2026-03-10 07:46:58: INFO: WORKER_SUCCESS - TICKET:4 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | Time: 49.89s | Meta: meta_CAR_1231243423_Actualizaci_n_de_datos_P__Natural_260309015101_4.json
+2026-03-10 07:52:13: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-10 07:52:13: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-10 07:52:13: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-10 07:52:13:  Worker cerrado. Proceso finalizado.
+2026-03-10 07:52:13:  Worker cerrado. Proceso finalizado.
+2026-03-10 07:52:13:  Worker cerrado. Proceso finalizado.
+2026-03-10 07:53:33: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-10 07:53:33: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-10 07:53:33: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-10 07:53:33: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-10 07:53:33: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-10 07:53:33: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-10 07:53:34: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-10 07:55:17: INFO: WORKER_START - TICKET:5 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | File: ilovepdf_merged.pdf
+2026-03-10 07:55:17: INFO: SHEETS_READY - Cliente de Google Sheets inicializado
+2026-03-10 07:55:22: INFO: RENDER_START - Mode: FULL_PDF | File: job-5.pdf
+2026-03-10 07:55:57: INFO: SPLIT_RENDER - JOB:5 | Pages: 19
+2026-03-10 07:56:00: INFO: SPLIT_SEGMENT - JOB:5 | Blocks_Found: 3
+2026-03-10 07:56:04: INFO: EXCEL_BATCH_SUCCESS - JOB:5 | Rows: 3
+2026-03-10 07:56:04: INFO: SPLIT_COMPLETED - JOB:5 | Duration: 41.78s
+2026-03-10 07:56:04: INFO: METADATA_SAVED - TICKET:5 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | Path: /app/metadata/meta_CAR_1231243423_Actualizaci_n_de_datos_P__Natural_260309015101_5.json
+2026-03-10 07:56:06: INFO: WORKER_SUCCESS - TICKET:5 | ID:CAR_1231243423_Actualización de datos P. Natural_260309015101 | Time: 48.59s | Meta: meta_CAR_1231243423_Actualizaci_n_de_datos_P__Natural_260309015101_5.json

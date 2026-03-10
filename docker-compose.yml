@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: pdf-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pdf-app:
+    build: .
+    container_name: pdf-system-main
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "3010:3010"
+    env_file: .env
+    environment:
+      - REDIS_HOST=redis
+    volumes:
+      - ./tmp:/app/tmp
+      - ./logs:/app/logs
+      - ./secrets:/app/secrets # Asegúrate de tener tu llave de Google aquí
+      - ./metadata:/app/metadata
+
+volumes:
+  redis_data:

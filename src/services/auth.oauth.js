@@ -13,9 +13,14 @@ const TOKEN_PATH = "token.json";
 const CREDENTIALS_PATH = path.resolve("secrets/auth.json");
 
 export const getOAuthClient = async () => {
+    // 1. Verificación de archivo de credenciales
+    if (!fs.existsSync(CREDENTIALS_PATH)) {
+        console.error(`CRITICAL: AUTH_FAILED - No se encontró el archivo de credenciales en ${CREDENTIALS_PATH}`);
+        throw new Error("CREDENTIALS_FILE_MISSING");
+    }
+
     const content = fs.readFileSync(CREDENTIALS_PATH);
     const credentials = JSON.parse(content);
-
     const { client_secret, client_id, redirect_uris } = credentials.installed;
 
     const oAuth2Client = new google.auth.OAuth2(
@@ -24,20 +29,17 @@ export const getOAuthClient = async () => {
         redirect_uris[0]
     );
 
+    // 2. Intento de carga de token existente
     if (fs.existsSync(TOKEN_PATH)) {
-        const token = JSON.parse(fs.readFileSync(TOKEN_PATH));
-        oAuth2Client.setCredentials(token);
-        return oAuth2Client;
+        try {
+            const token = JSON.parse(fs.readFileSync(TOKEN_PATH));
+            oAuth2Client.setCredentials(token);
+            // Log minimalista de éxito
+            return oAuth2Client;
+        } catch (err) {
+            console.warn("WARN: AUTH_TOKEN_CORRUPT - El archivo token.json es inválido. Se requiere nueva autorización.");
+        }
     }
-
-    const authUrl = oAuth2Client.generateAuthUrl({
-        access_type: "offline", // Requerido para obtener refresh_token
-        scope: SCOPES,
-        prompt: 'consent'       // nuevo token persistente
-    });
-
-    console.log("Autoriza aquí:");
-    console.log(authUrl);
 
     const rl = readline.createInterface({
         input: process.stdin,
@@ -45,18 +47,20 @@ export const getOAuthClient = async () => {
     });
 
     const code = await new Promise(resolve => {
-        rl.question("Pega el código aquí: ", resolve);
+        rl.question("ENTER_CODE: Pega el código de autorización aquí: ", resolve);
     });
 
     rl.close();
 
-    const { tokens } = await oAuth2Client.getToken(code);
-    oAuth2Client.setCredentials(tokens);
-
-    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
-
-
-    console.log("Token guardado en token.json");
-
-    return oAuth2Client;
+    try {
+        const { tokens } = await oAuth2Client.getToken(code);
+        oAuth2Client.setCredentials(tokens);
+        fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+        
+        console.log("INFO: AUTH_CONFIGURED - Nuevo token generado y persistido correctamente.");
+        return oAuth2Client;
+    } catch (err) {
+        console.error(`ERROR: AUTH_EXCHANGE_FAILED - No se pudo canjear el código por un token: ${err.message}`);
+        throw err;
+    }
 };

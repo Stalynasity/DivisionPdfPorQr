@@ -1,0 +1,60 @@
+{
+  "jobId": "5",
+  "timestamp": "2026-03-10T07:56:04.206Z",
+  "originalFileName": "ilovepdf_merged.pdf",
+  "resultMetadata": {
+    "idCaratula": "CAR_1231243423_Actualización de datos P. Natural_260309015101",
+    "jobId": "5",
+    "archivos": [
+      {
+        "categoria": "DP - IDEN",
+        "url": "1xoz-9_5FZW6t688iATnmjVoL3GvThUhX"
+      },
+      {
+        "categoria": "DP - DEN",
+        "url": "1EIvKFKa9DAMx8R7wnfd4YgnXryu5ybe-"
+      },
+      {
+        "categoria": "DP - PSB",
+        "url": "12lN9IU-UnCQ2BQDG2ckn6HfDBd7rI4AB"
+      }
+    ]
+  },
+  "clienteData": {
+    "rowNumber": 7,
+    "ID_Caratula": "CAR_1231243423_Actualización de datos P. Natural_260309015101",
+    "Fecha_creacion": "09/03/2026 9:52:40",
+    "Usuario": "stalynasi08",
+    "Oficina": "MATRIZ",
+    "Proceso": "Actualización de datos P. Natural",
+    "Fecha_proceso": "09/03/2026",
+    "No_Identificacion": "1231243423",
+    "Nombre_cliente": "lolsi Sasitin",
+    "Tipo_identificacion": "CEDULA",
+    "Tipo_persona": "N",
+    "Codigo_QR": "https://quickchart.io/qr?size=220&margin=1&ecLevel=L&text=CAR_1231243423_Actualizaci%C3%B3n%20de%20datos%20P.%20Natural_260309015101",
+    "Estado_Carga": "Archivo recibido. Ticket: 5",
+    "Enlace_Pdf": "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/AUTOMATICO_CAR_1231243423_Actualización de datos P. Natural_260309015101.pdf",
+    "Pdf_Completo": "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/AUTOMATICO_CAR_1231243423_Actualización de datos P. Natural_260309015101.pdf",
+    "No_Caja": "123154",
+    "Observacion": "Saiytim",
+    "No_Tarjeta": "",
+    "Tarjeta": "",
+    "Fecha_Expiracion_cedula": "09/03/2026",
+    "No_Certificado": "",
+    "No_operacion": "",
+    "Tipo_cuenta": "",
+    "No_Cuenta": "",
+    "No_Factura": "",
+    "Nombre_razon_social_proveedor": "",
+    "No_Solicitud_Chequera": "",
+    "No_Comprobante": "",
+    "Cod_Establecimiento": "",
+    "Convenio": "",
+    "Cargo": "",
+    "No_Cheque": "",
+    "Nombres_cliente": "lolsi",
+    "Apellidos_cliente": "Sasitin",
+    "APP_ASIGNADA": "APP-1"
+  }
+}

@@ -3,7 +3,6 @@ import path from "path";
 dotenv.config();
 
 export const TENANT_FOLDERS = {
-    Automatico: process.env.FOLDER_AUTOMATICO,
     PDF_COMPLETO_AUTOMATIZACION: process.env.FOLDER_PDF_COMPLETO
 };
 
