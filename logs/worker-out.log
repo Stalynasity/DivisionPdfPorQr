@@ -1,0 +1,196 @@
+2026-03-12 20:37:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-12 20:37:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 20:37:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-12 20:37:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 20:37:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 20:37:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 20:38:33: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 20:38:33: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 20:38:33: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 20:38:33:  Worker cerrado. Proceso finalizado.
+2026-03-12 20:38:33:  Worker cerrado. Proceso finalizado.
+2026-03-12 20:38:33:  Worker cerrado. Proceso finalizado.
+2026-03-12 20:41:42: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 20:41:42: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 20:41:42: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 20:41:42: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 20:41:42: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 20:41:43: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 20:46:16: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 20:46:16: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 20:46:16: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 20:46:16:  Worker cerrado. Proceso finalizado.
+2026-03-12 20:46:16:  Worker cerrado. Proceso finalizado.
+2026-03-12 20:57:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 20:57:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 20:57:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 20:57:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 20:57:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 20:57:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-12 20:57:58: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 20:58:16: INFO: WORKER_START - TICKET:1 | ID:CAR_15963258741_Crédito en línea_260310113454 | File: prubas12032026.pdf
+2026-03-12 20:58:16: INFO: SHEETS_READY - Cliente de Google Sheets inicializado
+2026-03-12 20:58:19: INFO: DRIVE_FOLDER_CREATED - Name: stalyn.asitimbay | Parent: 1oQs9RRJEe3P7NGxOTQgTfBqIzmbr5DCe
+2026-03-12 20:58:19: INFO: DRIVE_FOLDER_CREATED - Name: 15963258741 | Parent: 1HoFipLRmaVccA3icdVug1EzBk4AmdRR_
+2026-03-12 20:58:20: INFO: DRIVE_FOLDER_CREATED - Name: Crédito en línea | Parent: 1IESl7_Fi9C0HQz8fW-YSFEu-pY-z47q7
+2026-03-12 20:58:22: INFO: RENDER_START - Mode: FULL_PDF | File: job-1.pdf
+2026-03-12 20:58:54: INFO: SPLIT_RENDER - JOB:1 | Pages: 19
+2026-03-12 20:58:57: INFO: SPLIT_SEGMENT - JOB:1 | Blocks_Found: 3
+2026-03-12 20:59:02: INFO: EXCEL_BATCH_SUCCESS - JOB:1 | Rows: 3
+2026-03-12 20:59:02: INFO: SPLIT_COMPLETED - JOB:1 | Duration: 40.12s
+2026-03-12 20:59:04: INFO: WORKER_SUCCESS - TICKET:1 | ID:CAR_15963258741_Crédito en línea_260310113454 | Time: 47.97s | Meta: meta_CAR_15963258741_Cr_dito_en_l_nea_260310113454_1.json
+2026-03-12 21:33:44: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 21:33:44: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 21:33:44: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 21:33:44:  Worker cerrado. Proceso finalizado.
+2026-03-12 21:33:44:  Worker cerrado. Proceso finalizado.
+2026-03-12 21:33:44:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:33:05: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 22:33:05: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:33:05: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:33:05: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:33:05: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 22:33:05: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:33:06: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:34:23: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:34:23: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:34:23: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:42:51: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:42:51: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:42:51: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-12 22:42:51: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-12 22:42:51: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:42:51: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:42:52: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:49:33: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:49:33: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:49:33: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:49:33:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:49:33:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:49:33:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 22:50:29: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:50:29: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 22:50:29: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:50:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:50:29: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 22:50:29: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-12 22:50:29: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-12 22:55:25: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:55:25: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:55:25: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:55:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:55:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+2026-03-12 22:55:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:55:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:55:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-12 22:55:27: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-12 22:55:28: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:57:36: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:57:36: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:57:36: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:57:36:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:57:36:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:57:36:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:57:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:57:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:57:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-12 22:57:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-12 22:57:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-12 22:57:39: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+2026-03-12 22:57:40: [dotenv@17.2.4] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+2026-03-12 22:59:49: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:59:49: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:59:49: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-12 22:59:49:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:59:49:  Worker cerrado. Proceso finalizado.
+2026-03-12 22:59:49:  Worker cerrado. Proceso finalizado.

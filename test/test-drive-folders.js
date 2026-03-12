@@ -1,5 +1,5 @@
-import { getOrCreateFolderPath, saveToDrive } from "./src/services/drive.service.js";
-import { getDataFromExcel, updateSheetRow } from "./src/services/excel.service.js";
+import { getOrCreateFolderPath, saveToDrive } from "../src/services/drive.service.js";
+import { getDataFromExcel, updateSheetRow } from "../src/services/excel.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -9,7 +9,7 @@ const testFolderLogic = async () => {
     const ROOT_FOLDER_ID = process.env.ID_CARPETA_DIGITALIZADOS || "ID_DE_PRUEBA_AQUÍ";
     const idAProbar = "CAR_12321321_PRUEBA_TOTAL_260307061407";
 
-/** @type {import('./src/interfaces/excel.interface.js').ExcelMetadata} */
+/** @type {import('../src/interfaces/excel.interface.js').ExcelMetadata} */
     const mockMetadata = await getDataFromExcel(idAProbar);
     console.log("-data de id caratula---");
     console.table(mockMetadata);

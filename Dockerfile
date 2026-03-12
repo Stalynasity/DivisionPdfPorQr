@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Deshabilitamos la verificación estricta de SSL para NPM
+RUN npm config set strict-ssl false
+
 # Instalamos PM2 globalmente
 RUN npm install pm2 -g
 
@@ -13,15 +16,17 @@ WORKDIR /app
 
 # Instalamos dependencias (optimizando el caché de Docker)
 COPY package*.json ./
+# Mantenemos el flag de SSL falso para la instalación de dependencias del proyecto
 RUN npm install --production
 
 # Copiamos el código
 COPY . .
 
-# Instalamos el rotador de logs de PM2 dentro del contenedor
+# Instalamos el rotador de logs de PM2
+# Nota: pm2 install también usa npm internamente, por lo que heredará la config de SSL
 RUN pm2 install pm2-logrotate && \
-    pm2 set pm2-logrotate:max_size 3M && \
-    pm2 set pm2-logrotate:retain 30
+    pm2 set pm2-logrotate:max_size 150M && \
+    pm2 set pm2-logrotate:retain 150
 
 # Creamos las carpetas necesarias
 RUN mkdir -p tmp/pdf tmp/img logs/metadata

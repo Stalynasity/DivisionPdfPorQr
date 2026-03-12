@@ -1,4 +1,4 @@
-import { getDataFromExcel, updateSheetRow } from "./src/services/excel.service.js";
+import { getDataFromExcel, updateSheetRow } from "../src/services/excel.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();

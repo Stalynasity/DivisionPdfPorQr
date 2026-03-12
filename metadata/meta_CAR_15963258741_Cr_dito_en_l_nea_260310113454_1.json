@@ -1,0 +1,60 @@
+{
+  "jobId": "1",
+  "timestamp": "2026-03-12T20:59:02.692Z",
+  "originalFileName": "prubas12032026.pdf",
+  "resultMetadata": {
+    "idCaratula": "CAR_15963258741_Crédito en línea_260310113454",
+    "jobId": "1",
+    "archivos": [
+      {
+        "categoria": "DP - IDEN",
+        "url": "1rCrOh9nAfNO_wKVYzYMMAadd_Ym21EVc"
+      },
+      {
+        "categoria": "DP - DEN",
+        "url": "1S9zHd-q0o6nGkIJkXueeEvK6Y4lc8OQK"
+      },
+      {
+        "categoria": "DP - PSB",
+        "url": "14cGO8e4QVUeVRx31fl3rh6pWGHSy7Oel"
+      }
+    ]
+  },
+  "clienteData": {
+    "rowNumber": 8,
+    "ID_Caratula": "CAR_15963258741_Crédito en línea_260310113454",
+    "Fecha_creacion": "10/03/2026 11:35:17",
+    "Usuario": "stalyn.asitimbay",
+    "Oficina": "SUCURSAL GUAYAQUIL",
+    "Proceso": "Crédito en línea",
+    "Fecha_proceso": "10/03/2026",
+    "No_Identificacion": "15963258741",
+    "Nombre_cliente": "ref ref",
+    "Tipo_identificacion": "PASAPORTE",
+    "Tipo_persona": "N",
+    "Codigo_QR": "https://quickchart.io/qr?size=220&margin=1&ecLevel=L&text=CAR_15963258741_Cr%C3%A9dito%20en%20l%C3%ADnea_260310113454",
+    "Estado_Carga": "Archivo recibido. Ticket: 1",
+    "Enlace_Pdf": "DIGITALIZACION_APP/DIGITALIZACION_1/Caratulas_PDF/stalyn.asitimbay/15963258741/Caratula_CAR_15963258741_Crédito en línea_260310113454.pdf",
+    "Pdf_Completo": "",
+    "No_Caja": "eref",
+    "Observacion": "sfds",
+    "No_Tarjeta": "",
+    "Tarjeta": "",
+    "Fecha_Expiracion_cedula": "",
+    "No_Certificado": "",
+    "No_operacion": "ewrwer",
+    "Tipo_cuenta": "",
+    "No_Cuenta": "",
+    "No_Factura": "",
+    "Nombre_razon_social_proveedor": "",
+    "No_Solicitud_Chequera": "",
+    "No_Comprobante": "",
+    "Cod_Establecimiento": "",
+    "Convenio": "",
+    "Cargo": "",
+    "No_Cheque": "",
+    "Nombres_cliente": "ref",
+    "Apellidos_cliente": "ref",
+    "APP_ASIGNADA": "APP-1"
+  }
+}
