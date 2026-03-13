@@ -18,15 +18,22 @@ console.log(`INFO: Iniciando Watcher en: ${metadataPath}`);
 const watcher = chokidar.watch(metadataPath, {
     ignored: /(^|[\/\\])\../,
     persistent: true,
-    ignoreInitial: true, // No procesa archivos viejos al reiniciar
-    depth: 0 // Solo vigila la raíz de la carpeta metadata
+    ignoreInitial: true,
+    depth: 0,
+    usePolling: true,      // <--- OBLIGA a revisar aunque Windows no avise
+    interval: 500,         // Revisa cada medio segundo
+    binaryInterval: 1000
 });
 
 watcher.on('add', async (filePath) => {
-    if (path.extname(filePath) === '.json') {
-        const fileName = path.basename(filePath);
-        console.log(`INFO: [NEW_JSON] Detectado: ${fileName}`);
-        
+    // CAMBIO: Quitamos la validación estricta de .json por ahora para probar
+    console.log(`INFO: Archivo detectado en ruta: ${filePath}`);
+    
+    const fileName = path.basename(filePath);
+    
+    // Si quieres procesar todo lo que empiece por "meta_"
+    if (fileName.startsWith('meta_')) { 
+        console.log(`INFO: [METADATA] Procesando: ${fileName}`);
         try {
             // Agregamos a la cola para que el soap.worker.js lo tome
             await soapQueue.add("processSoap", 

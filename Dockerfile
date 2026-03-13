@@ -16,6 +16,10 @@ WORKDIR /app
 
 # Instalamos dependencias (optimizando el caché de Docker)
 COPY package*.json ./
+
+# Instalamos axios para las peticiones SOAP y chokidar para el watcher
+RUN npm install axios chokidar fs-extra
+
 # Mantenemos el flag de SSL falso para la instalación de dependencias del proyecto
 RUN npm install --production
 
