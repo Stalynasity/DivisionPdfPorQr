@@ -22,16 +22,35 @@ module.exports = {
             max_memory_restart: "1500M",
             env: { NODE_ENV: "production" }
         },
-        // --- NUEVO PROCESO PARA GMAIL ---
         {
             name: "gmail-scanner",
             script: "./src/jobs/gmail_poll.js",
-            instances: 1, // Solo uno para evitar colisiones de descarga
+            instances: 1,
             exec_mode: "fork",
             error_file: "./logs/gmail-error.log",
             out_file: "./logs/gmail-out.log",
             log_date_format: "YYYY-MM-DD HH:mm:ss",
             autorestart: true,
+            env: { NODE_ENV: "production" }
+        },
+        {
+            name: "metadata-watcher",
+            script: "./src/watchers/metadata.watcher.js",
+            instances: 1,
+            exec_mode: "fork",
+            error_file: "./logs/watcher-soap-error.log",
+            out_file: "./logs/watcher-soap-out.log",
+            log_date_format: "YYYY-MM-DD HH:mm:ss",
+            env: { NODE_ENV: "production" }
+        },
+        {
+            name: "soap-worker",
+            script: "./src/jobs/soap.worker.js",
+            instances: 1,
+            exec_mode: "fork",
+            error_file: "./logs/soap-worker-error.log",
+            out_file: "./logs/soap-worker-out.log",
+            log_date_format: "YYYY-MM-DD HH:mm:ss",
             env: { NODE_ENV: "production" }
         }
     ]

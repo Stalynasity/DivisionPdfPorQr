@@ -255,3 +255,10 @@
 2026-03-13 03:47:57: INFO: STARTUP - API PDF Split inicializada
 2026-03-13 03:47:57: INFO: CONFIG - Puerto: 3010 | Node_Env: production
 2026-03-13 03:47:57: INFO: MONITOR - Iniciando polling de Google Drive cada 4000ms
+2026-03-13 06:28:01: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-13 06:28:01: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-13 06:28:01: [dotenv@17.2.4] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+2026-03-13 06:28:01: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-13 06:28:01: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-13 06:28:01: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-13 06:28:01: INFO: STARTUP - API PDF Split inicializada

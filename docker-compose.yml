@@ -28,10 +28,9 @@ services:
     environment:
       - REDIS_HOST=redis
     volumes:
-      - ./tmp:/app/tmp
       - ./logs:/app/logs
       - ./secrets:/app/secrets # Asegúrate de tener tu llave de Google aquí
-      - ./metadata:/app/metadata
+      - ./PROCESO_DOC:/app/PROCESO_DOC
 
 volumes:
   redis_data:
