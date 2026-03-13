@@ -247,3 +247,11 @@
 2026-03-12 22:59:45: DEBUG: GMAIL - Iniciando ciclo de descarga...
 2026-03-12 22:59:45: INFO: GMAIL_POLLING - Mensajes candidatos encontrados: 1
 2026-03-12 22:59:45: DEBUG: GMAIL - Extrayendo contenido del mensaje: 19ce42601ebddc5c
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-13 03:47:57: INFO: STARTUP - API PDF Split inicializada
+2026-03-13 03:47:57: INFO: CONFIG - Puerto: 3010 | Node_Env: production
+2026-03-13 03:47:57: INFO: MONITOR - Iniciando polling de Google Drive cada 4000ms

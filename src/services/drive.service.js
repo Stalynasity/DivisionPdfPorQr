@@ -20,30 +20,29 @@ export const getDriveClient = async () => {
 };
 
 // ========================= DOWNLOAD =========================
-export const downloadFromDrive = async (fileId, jobId) => {
+export const uploadToDrive = async (name, fileBuffer, folderId) => {
     const drive = await getDriveClient();
-    const dirPath = PATHS.tempPdf;
-    await fsExtra.ensureDir(dirPath);
-
-    const destPath = path.join(dirPath, `job-${jobId}.pdf`);
-    const dest = fs.createWriteStream(destPath);
+    
+    const bufferStream = new Readable();
+    bufferStream.push(fileBuffer);
+    bufferStream.push(null);
 
     try {
-        const res = await drive.files.get(
-            { fileId, alt: "media" },
-            { responseType: "stream" }
-        );
-
-        await new Promise((resolve, reject) => {
-            res.data.pipe(dest);
-            dest.on("finish", resolve);
-            dest.on("error", (err) => reject(new Error(`WRITE_STREAM_ERROR: ${err.message}`)));
-            res.data.on("error", (err) => reject(new Error(`READ_STREAM_ERROR: ${err.message}`)));
+        const res = await drive.files.create({
+            requestBody: { 
+                name, 
+                parents: [folderId] 
+            },
+            media: { 
+                mimeType: "application/pdf", 
+                body: bufferStream 
+            },
+            supportsAllDrives: true
         });
 
-        return destPath;
+        return res.data.id;
     } catch (error) {
-        console.error(`ERROR: DRIVE_DOWNLOAD_FAILED - File: ${fileId} | Reason: ${error.message}`);
+        console.error(`ERROR: DRIVE_UPLOAD_FAILED - Name: ${name} | Reason: ${error.message}`);
         throw error;
     }
 };
@@ -122,7 +121,6 @@ export const getOrCreateFolderPath = async (rootFolderId, pathArray) => {
                 supportsAllDrives: true
             });
             currentParentId = newFolder.data.id;
-            console.log(`INFO: DRIVE_FOLDER_CREATED - Name: ${folderName} | Parent: ${currentParentId}`);
         }
     }
     return currentParentId;

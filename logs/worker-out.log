@@ -194,3 +194,27 @@
 2026-03-12 22:59:49:  Worker cerrado. Proceso finalizado.
 2026-03-12 22:59:49:  Worker cerrado. Proceso finalizado.
 2026-03-12 22:59:49:  Worker cerrado. Proceso finalizado.
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+2026-03-13 03:47:56: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+2026-03-13 03:47:57: [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+2026-03-13 03:48:09: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-13 03:48:09: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-13 03:48:09: 
+ INFO: SIGINT recibido. Cerrando worker de forma segura...
+2026-03-13 03:48:09:  Worker cerrado. Proceso finalizado.
+2026-03-13 03:48:09:  Worker cerrado. Proceso finalizado.
+2026-03-13 03:48:09:  Worker cerrado. Proceso finalizado.

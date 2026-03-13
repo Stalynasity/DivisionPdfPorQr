@@ -26,7 +26,7 @@ COPY . .
 # Nota: pm2 install también usa npm internamente, por lo que heredará la config de SSL
 RUN pm2 install pm2-logrotate && \
     pm2 set pm2-logrotate:max_size 150M && \
-    pm2 set pm2-logrotate:retain 150
+    pm2 set pm2-logrotate:retain 20
 
 # Creamos las carpetas necesarias
 RUN mkdir -p tmp/pdf tmp/img logs/metadata

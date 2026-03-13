@@ -3,3 +3,5 @@ node_modules/
 secrets/
 token.json
 tmp/
+logs/
+PROCESO_DOC/

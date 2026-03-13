@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { connection } from "../config/redis.js";
 import { processPdfSplit } from "../services/split.service.js";
-import { downloadFromDrive, moveFile, getOrCreateFolderPath } from "../services/drive.service.js";
+import { moveFile, getOrCreateFolderPath, uploadToDrive } from "../services/drive.service.js"; 
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
 import { getDataFromExcel, updateSheetRow } from "../services/excel.service.js";
 import fs from "fs-extra";
@@ -11,101 +11,85 @@ import path from "path";
 dotenv.config();
 
 const processor = async (job) => {
-    const { fileId, fileName, idCaratula } = job.data;
+    // CAMBIO: Ahora recibimos 'filePath' en lugar de 'fileId'
+    const { filePath, fileName, idCaratula } = job.data;
     const logId = `TICKET:${job.id} | ID:${idCaratula}`;
-    let pdfLocalPath = null;
 
     try {
         console.log(`INFO: WORKER_START - ${logId} | File: ${fileName}`);
 
+        // 1. Validar metadata en Excel
         const excelMetadata = await getDataFromExcel(idCaratula);
 
         if (!excelMetadata) {
             console.warn(`WARN: DATA_MISSING - ${logId} | ID no encontrado en Maestro`);
-            await moveFile(fileId, SYSTEM_FOLDERS.ERRORES);
+            // SI FALLA: Subimos el archivo local a la carpeta de ERRORES de Drive
+            const fileBuffer = await fs.readFile(filePath);
+            await uploadToDrive(fileName, fileBuffer, SYSTEM_FOLDERS.ERRORES);
+            await fs.remove(filePath); // Limpiar local
             return { status: 'error_not_found_in_excel' };
         }
 
         await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", "Separación en curso...");
 
-        const usuario_carga = excelMetadata.Usuario || "SIN_USUARIO";
-        const identificacion = excelMetadata.No_Identificacion || "0000000000";
-        const proceso = excelMetadata.Proceso || "GENERAL";
+        // 2. Preparar carpetas de destino en Drive para los PDFs ya divididos
         const rootDigitalizados = process.env.ID_CARPETA_DIGITALIZADOS;
-
         const targetDriveFolderId = await getOrCreateFolderPath(rootDigitalizados, [
-            usuario_carga,
-            identificacion,
-            proceso
+            excelMetadata.Usuario || "SIN_USUARIO",
+            excelMetadata.No_Identificacion || "0000000000",
+            excelMetadata.Proceso || "GENERAL"
         ]);
 
-        pdfLocalPath = await downloadFromDrive(fileId, job.id);
-        if (!fs.existsSync(pdfLocalPath)) throw new Error("FILE_NOT_FOUND_AFTER_DOWNLOAD");
+        // 3. VALIDACIÓN: Verificar que el archivo realmente existe en el disco
+        if (!await fs.pathExists(filePath)) {
+            throw new Error(`FILE_NOT_FOUND_ON_DISK: ${filePath}`);
+        }
 
+        // 4. PROCESAR: split.service debe estar preparado para recibir una ruta local
         const resultMetadata = await processPdfSplit(
-            pdfLocalPath,
+            filePath, // Ruta local directamente
             job.id,
             targetDriveFolderId,
             excelMetadata
         );
 
-        // const jsonFileName = `meta_${idCaratula}_${job.id}.json`;
-        // const jsonPath = path.join(process.env.Local_metadata, jsonFileName);
-
-        // await fs.writeJson(jsonPath, {
-        //     jobId: job.id,
-        //     timestamp: new Date().toISOString(),
-        //     originalFileName: fileName,
-        //     resultMetadata,
-        //     clienteData: excelMetadata
-        // }, { spaces: 2 });
-
-
-        // 1. Obtener y validar el directorio (si no existe en .env, usa 'metadata' por defecto)
+        // 5. GUARDAR METADATA JSON LOCAL
         const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
-
-        // 2. ASEGURAR que la carpeta existe (fs-extra lo hace por ti)
         await fs.ensureDir(metadataDir);
-
-        // 3. NORMALIZAR el nombre del archivo (Quita espacios, tildes y caracteres raros)
-        // Esto evita el error de "Actualizaci贸n"
         const safeIdCaratula = idCaratula.replace(/[^a-z0-9]/gi, '_');
-        const jsonFileName = `meta_${safeIdCaratula}_${job.id}.json`;
-        const jsonPath = path.join(metadataDir, jsonFileName);
+        const jsonPath = path.join(metadataDir, `meta_${safeIdCaratula}_${job.id}.json`);
 
-        try {
-            // 4. Escribir el archivo
-            await fs.writeJson(jsonPath, {
-                jobId: job.id,
-                timestamp: new Date().toISOString(),
-                originalFileName: fileName,
-                resultMetadata,
-                clienteData: excelMetadata
-            }, { spaces: 2 });
+        await fs.writeJson(jsonPath, {
+            jobId: job.id,
+            timestamp: new Date().toISOString(),
+            originalFileName: fileName,
+            resultMetadata,
+            clienteData: excelMetadata
+        }, { spaces: 2 });
 
-        } catch (writeErr) {
-            console.error(`ERROR: WRITE_JSON_FAILED - ${logId} | Reason: ${writeErr.message}`);
-            // No lanzamos el error aquí para que el PDF no se pierda solo porque falló el JSON
-        }
-
-
-
+        // 6. ACTUALIZAR EXCEL Y LIMPIEZA
         await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `FINALIZADO | Ticket: tic-${job.id}`);
-        await updateSheetRow(excelMetadata.rowNumber, "monitoreo", "Ticket_procesados", job.id);
+        await updateSheetRow(2, "monitoreo", "Ticket_procesados", job.id);
 
-        await moveFile(fileId, SYSTEM_FOLDERS.PROCESADOS);
+        // ELIMINAR EL ARCHIVO LOCAL (Ya se procesó y se subieron las partes a Drive)
+        await fs.remove(filePath);
 
         const duration = ((Date.now() - job.timestamp) / 1000).toFixed(2);
-        console.log(`INFO: WORKER_SUCCESS - ${logId} | Time: ${duration}s | Meta: ${jsonFileName}`);
+        console.log(`INFO: WORKER_SUCCESS - ${logId} | Time: ${duration}s`);
 
         return { status: 'success', path: jsonPath };
 
     } catch (err) {
         console.error(`ERROR: WORKER_FAILED - ${logId} | Msg: ${err.message}`);
         try {
-            await moveFile(fileId, SYSTEM_FOLDERS.ERRORES);
+            // Si algo falla catastróficamente, intentamos subir el original a Drive Errores
+            if (await fs.pathExists(filePath)) {
+                const fileBuffer = await fs.readFile(filePath);
+                await uploadToDrive(fileName, fileBuffer, SYSTEM_FOLDERS.ERRORES);
+                await fs.remove(filePath);
+            }
         } catch (moveErr) {
-            console.error(`CRITICAL: RECOVERY_FAILED - ${logId} | No se pudo mover a ERRORES: ${moveErr.message}`);
+            console.error(`CRITICAL: RECOVERY_FAILED - No se pudo respaldar en Drive: ${moveErr.message}`);
         }
         throw err;
     }
@@ -128,10 +112,8 @@ worker.on('error', err => {
     console.error(`CRITICAL: REDIS_CONNECTION_LOST - ${err.message}`);
 });
 
-// --- LÓGICA DE CIERRE GRACIOSO (Graceful Shutdown) ---
+// --- LÓGICA DE CIERRE
 const gracefulShutdown = async (signal) => {
-    console.log(`\n INFO: ${signal} recibido. Cerrando worker de forma segura...`);
-
     // El método close() espera a que los jobs actuales terminen (o lleguen al timeout)
     await worker.close();
 

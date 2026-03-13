@@ -14,7 +14,6 @@ const getSheetsClient = async () => {
     if (!sheetsInstance) {
         const auth = await getOAuthClient();
         sheetsInstance = google.sheets({ version: "v4", auth });
-        console.log("INFO: SHEETS_READY - Cliente de Google Sheets inicializado");
     }
     return sheetsInstance;
 };
