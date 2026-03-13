@@ -31,7 +31,8 @@ export const descargarFacturasEmail = async () => {
 
         const res = await gmail.users.messages.list({
             userId: 'me',
-            q: `subject:("[IDXA] INDEXACION_AUTOMATICA_APP - ") is:unread -label:${NOMBRE_ETIQUETA} -label:${ETIQUETA_SIN_PDF}`
+            // Usamos comillas dobles para forzar la frase exacta
+            q: `subject:"[IDX] INDEXACION_AUTOMATICA_APP - alternativa" is:unread -label:${NOMBRE_ETIQUETA} -label:${ETIQUETA_SIN_PDF}`
         });
 
         const messages = res.data.messages || [];
@@ -40,7 +41,7 @@ export const descargarFacturasEmail = async () => {
         for (const msgInfo of messages) {
             const msg = await gmail.users.messages.get({ userId: 'me', id: msgInfo.id });
             const todasLasPartes = msg.data.payload.parts ? buscarPdfsEnPartes(msg.data.payload.parts) : [];
-            
+
             if (todasLasPartes.length === 0) {
                 console.warn(`WARN: GMAIL - Mensaje ${msgInfo.id} sin PDFs. Archivando...`);
                 await marcarComoProcesado(gmail, msgInfo.id, ETIQUETA_SIN_PDF);
@@ -59,7 +60,7 @@ export const descargarFacturasEmail = async () => {
                     });
 
                     const fileBuffer = Buffer.from(attach.data.data, 'base64url');
-                    
+
                     // Definimos la ruta completa del archivo
                     // Agregamos un timestamp al nombre para evitar sobrescribir archivos con el mismo nombre
                     const fileName = `${Date.now()}_${part.filename}`;
@@ -114,11 +115,19 @@ async function enviarRespuesta(gmail, originalMsg) {
     const from = originalMsg.payload.headers.find(h => h.name === 'From')?.value;
 
     const cuerpoHTML = `
-        <div style="font-family: sans-serif; color: #333; line-height: 1.4; max-width: 450px; border: 1px solid #e0e0e0; padding: 12px; border-radius: 6px;">
-            <h3 style="color: #1a73e8; margin: 0 0 8px 0; font-size: 16px;">Confirmación de Recepción</h3>
-            <p style="margin: 0 0 10px 0; font-size: 13px;">Documento recibido correctamente en el sistema local.</p>
-            <p style="margin: 0; font-size: 12px; color: #10b981;">✓ En cola de procesamiento local</p>
-        </div>`;
+    <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; border: 1px solid #eee; padding: 20px; border-radius: 8px;">
+      <h2 style="color: #1a73e8; margin-top: 0;">Confirmación de Recepción</h2>
+      <p>Se ha recibido y guardado correctamente el archivo PDF para el proceso de <strong>Indexación Automática</strong>.</p>
+      <div style="background-color: #fff4e5; border-left: 4px solid #ff9800; padding: 10px 15px; margin: 20px 0;">
+        <strong>Validación de Calidad:</strong><br>
+        Por favor, asegúrese de que el PDF escaneado contenga el orden correcto: 
+        <br><em>Carátula + Separador + Contenido...</em>.
+      </div>
+      <p>El documento ha sido puesto en cola para su procesamiento.</p>
+      <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+      <p style="font-size: 11px; color: #888;">Sistema Automatizado de Digitalización | No responder a este correo.</p>
+    </div>
+  `;
 
     const str = [
         `To: ${from}`, `Subject: Re: ${subject}`,

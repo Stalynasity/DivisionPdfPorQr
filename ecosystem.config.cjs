@@ -32,26 +32,6 @@ module.exports = {
             log_date_format: "YYYY-MM-DD HH:mm:ss",
             autorestart: true,
             env: { NODE_ENV: "production" }
-        },
-        {
-            name: "metadata-watcher",
-            script: "./src/watchers/metadata.watcher.js",
-            instances: 1,
-            exec_mode: "fork",
-            error_file: "./logs/watcher-soap-error.log",
-            out_file: "./logs/watcher-soap-out.log",
-            log_date_format: "YYYY-MM-DD HH:mm:ss",
-            env: { NODE_ENV: "production" }
-        },
-        {
-            name: "soap-worker",
-            script: "./src/jobs/soap.worker.js",
-            instances: 1,
-            exec_mode: "fork",
-            error_file: "./logs/soap-worker-error.log",
-            out_file: "./logs/soap-worker-out.log",
-            log_date_format: "YYYY-MM-DD HH:mm:ss",
-            env: { NODE_ENV: "production" }
         }
     ]
 };

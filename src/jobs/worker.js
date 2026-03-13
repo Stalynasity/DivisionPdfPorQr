@@ -68,7 +68,7 @@ const processor = async (job) => {
         }, { spaces: 2 });
 
         // 6. ACTUALIZAR EXCEL Y LIMPIEZA
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `FINALIZADO | Ticket: tic-${job.id}`);
+        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `FINALIZADO EXITOSA | Ticket: tic-${job.id}`);
         await updateSheetRow(2, "monitoreo", "Ticket_procesados", job.id);
 
         // ELIMINAR EL ARCHIVO LOCAL (Ya se procesó y se subieron las partes a Drive)
