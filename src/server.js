@@ -7,24 +7,41 @@ dotenv.config({ path: "./.env" });
 const app = express();
 app.use(express.json());
 
-
 const PORT = process.env.PORT || 3010;
 
 app.listen(PORT, () => {
-    console.log("INFO: STARTUP - API PDF Split inicializada");
+    console.log("---------------------------------------------------------");
+    console.log(`🚀 INFO: STARTUP - API PDF Split inicializada en puerto ${PORT}`);
 
     const startMonitoring = async () => {
+        const timestamp = new Date().toLocaleString();
+        
         try {
+            // Log de inicio de ciclo (opcional, puedes comentarlo si prefieres menos ruido)
+            // console.log(`[${timestamp}] 🔎 INFO: Buscando nuevos archivos en carpeta de entrada...`);
+            
             await watchInputFolder();
 
         } catch (error) {
-            console.error("ERROR: MONITOR_FAILED - Excepción no controlada");
-            console.error(`CONTEXT: ${error.message}`);
+            console.error(`[${timestamp}] 🚨 ERROR: MONITOR_FAILED - Excepción en el ciclo de monitoreo`);
+            console.error(`👉 MOTIVO: ${error.message}`);
+            
+            if (error.stack) {
+                console.error(`👉 DETALLE: ${error.stack.split('\n')[1]}`); // Muestra la línea del error
+            }
         } finally {
             // Importante: No bajar de 4000ms para no saturar las APIs de Google
+            // El uso de setTimeout asegura que el siguiente ciclo solo empiece DESPUÉS de que termine el actual
             setTimeout(startMonitoring, 4000);
         }
     };
 
+    // Iniciar el ciclo por primera vez
     startMonitoring();
+});
+
+// Manejo de cierres limpios
+process.on('SIGINT', () => {
+    console.log("\n🛑 INFO: Apagando servidor de monitoreo...");
+    process.exit(0);
 });

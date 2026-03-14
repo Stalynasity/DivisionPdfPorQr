@@ -14,11 +14,9 @@ const RUTA_LOCAL_ENCOLADO = process.env.PATH_ENCOLADO_LOCAL;
 
 export const watchInputFolder = async () => {
     try {
-        // Asegurar que existan las rutas locales
         await fs.ensureDir(RUTA_LOCAL_ENTRADA);
         await fs.ensureDir(RUTA_LOCAL_ENCOLADO);
 
-        // 1. Leer archivos de la carpeta local
         const files = await fs.readdir(RUTA_LOCAL_ENTRADA);
         const pdfFiles = files.filter(f => f.toLowerCase().endsWith('.pdf'));
 
@@ -28,64 +26,93 @@ export const watchInputFolder = async () => {
             const localPath = path.join(RUTA_LOCAL_ENTRADA, fileName);
             let tempImgDir = null;
 
-            try {
+            if (fileName.length > 100) {
+                const ext = path.extname(fileName);
+                const base = path.basename(fileName, ext).substring(0, 50); // Tomamos solo los primeros 50
+                const newFileName = `${base}_${Date.now()}${ext}`;
+                const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
+                
+                try {
+                    await fs.rename(localPath, newPath);
+                    console.log(`NOMBRE ACORTADO: De [${fileName.length} carac.] a [${newFileName.length} carac.]`);
+                    fileName = newFileName;
+                    localPath = newPath;
+                } catch (renameErr) {
+                    console.error(`No se pudo renombrar, se intentará procesar original: ${renameErr.message}`);
+                }
+            }
 
-                // 2. Preparar previsualización para QR
+            console.log(`\n---PROCESANDO: ${fileName} ---`);
+
+            try {
+                // LOG 1: Verificar existencia física
+                if (!await fs.pathExists(localPath)) {
+                    throw new Error(`El archivo desapareció antes de procesar: ${localPath}`);
+                }
+
                 tempImgDir = path.join(PATHS.tempImg, `scan-${Date.now()}`);
                 await fs.ensureDir(tempImgDir);
                 
+                // LOG 2: Renderizado
+                console.log(`[1/4] Renderizando PDF a imágenes en: ${tempImgDir}`);
                 await renderPdfToImages(localPath, tempImgDir, true);
-                const images = (await fs.readdir(tempImgDir)).sort();
                 
-                if (images.length === 0) throw new Error("No se pudo renderizar el PDF");
+                const images = (await fs.readdir(tempImgDir)).sort();
+                console.log(`[2/4] Imágenes generadas: ${images.length}`);
+                
+                if (images.length === 0) throw new Error("Poppler/pdftoppm no generó ninguna imagen.");
 
+                // LOG 3: Lectura QR
                 const firstPagePath = path.join(tempImgDir, images[0]);
+                console.log(`[3/4] Intentando leer QR de: ${images[0]}`);
                 const idCaratulaRaw = await readQR(firstPagePath);
+                console.log(`[4/4] Resultado QR Raw: "${idCaratulaRaw}"`);
 
-                // --- VALIDACIONES LÓGICAS ---
-
-                // Caso A: No hay QR
                 if (!idCaratulaRaw) {
-                    console.warn(`WARN: REJECTED - No QR en: ${fileName}`);
+                    console.warn(`WARN: REJECTED - No se detectó QR en la primera página.`);
                     await handleLocalError(localPath, fileName, "SIN_QR");
                     continue;
                 }
 
                 const idLimpio = idCaratulaRaw.replace(/^"+|"+$/g, "").trim();
+                console.log(`🔍 ID Limpio: ${idLimpio}. Buscando en Excel...`);
+                
                 const rowNumber = await existsIdCaratula(idLimpio);
 
-                // Caso B: QR no existe en Maestro
                 if (!rowNumber) {
-                    console.warn(`WARN: REJECTED - ID ${idLimpio} no existe en Excel | Archivo: ${fileName}`);
+                    console.warn(`WARN: REJECTED - ID ${idLimpio} no está en el Maestro.`);
                     await handleLocalError(localPath, fileName, `ID_INEXISTENTE_${idLimpio}`);
                     continue;
                 }
 
-                // --- ÉXITO: MOVER A ENCOLADO Y DISPARAR QUEUE ---
-
+                // ÉXITO
                 const finalPath = path.join(RUTA_LOCAL_ENCOLADO, fileName);
                 await fs.move(localPath, finalPath, { overwrite: true });
 
                 const job = await splitQueue.add("split", {
-                    filePath: finalPath, // Ahora pasamos ruta local
+                    filePath: finalPath,
                     fileName: fileName,
                     idCaratula: idLimpio
                 });
 
-                console.log(`INFO: COMPLETED - File: ${fileName} | ID: ${idLimpio} | Ticket: ${job.id}`);
+                console.log(`✅ EXITO: Ticket ${job.id} generado.`);
 
                 await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Encolado Local. Ticket: ${job.id}`);
                 await updateSheetRow(2, "monitoreo", "Ultimo_Ticket", job.id);
 
             } catch (err) {
-                console.error(`ERROR: FAILED_FILE - ${fileName} | Reason: ${err.message}`);
-                await handleLocalError(localPath, fileName, "ERROR_SISTEMA");
+                // LOG DE ERROR MEJORADO
+                console.error(`❌ ERROR_DETALLE: Archivo: ${fileName}`);
+                console.error(` Mensaje: ${err.message || 'Error sin mensaje (null/undefined)'}`);
+                console.error(` Stack: ${err.stack}`); // Esto te dirá la línea exacta del fallo
+                
+                await handleLocalError(localPath, fileName, `FALLO_SISTEMA: ${err.message || 'Desconocido'}`);
             } finally {
                 if (tempImgDir) await fs.remove(tempImgDir).catch(() => { });
             }
         }
     } catch (error) {
-        console.error(`CRITICAL: MONITOR_FATAL - ${error.message}`);
+        console.error(` CRITICAL: MONITOR_FATAL - ${error.stack}`);
     }
 };
 

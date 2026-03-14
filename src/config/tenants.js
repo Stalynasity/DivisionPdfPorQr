@@ -7,9 +7,6 @@ export const TENANT_FOLDERS = {
 };
 
 export const SYSTEM_FOLDERS = {
-    ENTRADA: process.env.FOLDER_ENTRADA,
-    TRANSITO: process.env.FOLDER_ENCOLADO,
-    PROCESADOS: process.env.FOLDER_PROCESADOS,
     ERRORES: process.env.FOLDER_ERRORES
 };
 
