@@ -11,20 +11,17 @@ const PORT = process.env.PORT || 3010;
 
 app.listen(PORT, () => {
     console.log("---------------------------------------------------------");
-    console.log(`🚀 INFO: STARTUP - API PDF Split inicializada en puerto ${PORT}`);
+    console.log(`API PDF Split inicializada en puerto ${PORT}`);
 
     const startMonitoring = async () => {
         const timestamp = new Date().toLocaleString();
         
         try {
-            // Log de inicio de ciclo (opcional, puedes comentarlo si prefieres menos ruido)
-            // console.log(`[${timestamp}] 🔎 INFO: Buscando nuevos archivos en carpeta de entrada...`);
-            
             await watchInputFolder();
 
         } catch (error) {
-            console.error(`[${timestamp}] 🚨 ERROR: MONITOR_FAILED - Excepción en el ciclo de monitoreo`);
-            console.error(`👉 MOTIVO: ${error.message}`);
+            console.error(`[${timestamp}] ERROR: MONITOR_FAILED - Excepción en el ciclo de monitoreo`);
+            console.error(` MOTIVO: ${error.message}`);
             
             if (error.stack) {
                 console.error(`👉 DETALLE: ${error.stack.split('\n')[1]}`); // Muestra la línea del error
@@ -42,6 +39,6 @@ app.listen(PORT, () => {
 
 // Manejo de cierres limpios
 process.on('SIGINT', () => {
-    console.log("\n🛑 INFO: Apagando servidor de monitoreo...");
+    console.log("\nINFO: Apagando servidor de monitoreo...");
     process.exit(0);
 });

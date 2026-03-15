@@ -17,8 +17,6 @@ WORKDIR /app
 # Instalamos dependencias (optimizando el caché de Docker)
 COPY package*.json ./
 
-RUN npm install jimp jsqr
-
 # Mantenemos el flag de SSL falso para la instalación de dependencias del proyecto
 RUN npm install --production
 

@@ -1,6 +1,6 @@
 import { splitQueue } from "../jobs/queue.js";
 import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
-import { uploadToDrive } from "./drive.service.js"; // Añadimos uploadToDrive
+import { uploadToDrive } from "./drive.service.js";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
 import { updateSheetRow, existsIdCaratula } from "../services/excel.service.js";
@@ -34,7 +34,6 @@ export const watchInputFolder = async () => {
                 
                 try {
                     await fs.rename(localPath, newPath);
-                    console.log(`NOMBRE ACORTADO: De [${fileName.length} carac.] a [${newFileName.length} carac.]`);
                     fileName = newFileName;
                     localPath = newPath;
                 } catch (renameErr) {
@@ -75,7 +74,6 @@ export const watchInputFolder = async () => {
                 }
 
                 const idLimpio = idCaratulaRaw.replace(/^"+|"+$/g, "").trim();
-                console.log(`🔍 ID Limpio: ${idLimpio}. Buscando en Excel...`);
                 
                 const rowNumber = await existsIdCaratula(idLimpio);
 
@@ -95,14 +93,14 @@ export const watchInputFolder = async () => {
                     idCaratula: idLimpio
                 });
 
-                console.log(`✅ EXITO: Ticket ${job.id} generado.`);
+                console.log(`EXITO: Ticket ${job.id} generado.`);
 
-                await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Encolado Local. Ticket: ${job.id}`);
+                await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Tu Ticket: ${job.id}`);
                 await updateSheetRow(2, "monitoreo", "Ultimo_Ticket", job.id);
 
             } catch (err) {
                 // LOG DE ERROR MEJORADO
-                console.error(`❌ ERROR_DETALLE: Archivo: ${fileName}`);
+                console.error(`ERROR_DETALLE: Archivo: ${fileName}`);
                 console.error(` Mensaje: ${err.message || 'Error sin mensaje (null/undefined)'}`);
                 console.error(` Stack: ${err.stack}`); // Esto te dirá la línea exacta del fallo
                 
@@ -126,9 +124,8 @@ async function handleLocalError(localPath, fileName, motivo) {
         // Leemos el archivo local para subirlo
         const fileContent = await fs.readFile(localPath);
         
-        // Usamos una función de subida (asegúrate de tenerla en drive.service.js)
         await uploadToDrive(fileName, fileContent, SYSTEM_FOLDERS.ERRORES);
-        
+        await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Error: Motivo: ${motivo} - Revise que su Pdf se genero correctamente en el Correo o Comunicate con el administrador.`);
         // Borramos del local para no procesar de nuevo
         await fs.remove(localPath);
     } catch (e) {
