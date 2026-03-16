@@ -12,7 +12,7 @@ export const renderPdfToImages = async (pdfPath, outputDir, onlyFirstPage = fals
         if (!popplerBin) {
             return reject(new Error("CONFIG_ERROR: Binario de Poppler no definido"));
         }
-        const args = ["-png", "-r", "100"];
+        const args = ["-png", "-r", "125"];
 
         if (onlyFirstPage) {
             args.push("-f", "1", "-l", "1");

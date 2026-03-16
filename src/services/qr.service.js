@@ -7,69 +7,50 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let isPrepared = false;
-// Solo guardamos la ruta, NO cargamos el archivo en memoria aqui
-const wasmPath = path.join(__dirname, "zxing_reader.wasm");
 
+/**
+ * Lee códigos QR de una imagen de forma local usando ZXing WASM.
+ * Incluye auto-recuperación en caso de fallos de memoria WebAssembly.
+ */
 export const readQR = async (imagePath) => {
-    const startTime = Date.now();
-    const fileName = path.basename(imagePath);
-    
     try {
         if (!fs.existsSync(imagePath)) return null;
 
-        // Validacion de existencia del WASM
-        if (!fs.existsSync(wasmPath)) {
-            console.error("[QR-LOG] Error: No se encuentra el archivo .wasm en " + wasmPath);
-            return null;
-        }
-
-        // --- Inicializacion del Motor ---
+        // Inicialización única del motor
         if (!isPrepared) {
-            try {
-                await prepareZXingModule({
-                    // Dejamos que la libreria gestione el fetch localmente
-                    locateFile: (path) => {
-                        if (path.endsWith('.wasm')) return wasmPath;
-                        return path;
-                    }
-                });
-                isPrepared = true;
-            } catch (pErr) {
-                console.error(`[QR-LOG] Error preparando modulo: ${pErr.message}`);
-                return null;
-            }
+            const wasmPath = path.join(__dirname, "zxing_reader.wasm");
+            
+            await prepareZXingModule({
+                overrides: {
+                    wasmBinary: fs.readFileSync(wasmPath),
+                    noInitialRun: true
+                },
+                fireImmediately: true
+            });
+            
+            isPrepared = true;
         }
 
-        // --- Lectura ---
-        const imageBuffer = fs.readFileSync(imagePath);
-        
-        const results = await readBarcodes(imageBuffer, {
-            tryHarder: false, 
-            formats: ["QRCode"],
-            maxSymbols: 1
+        const results = await readBarcodes(fs.readFileSync(imagePath), {
+            tryHarder: true,
+            formats: ["QRCode"]
         });
 
-        const duration = Date.now() - startTime;
-
         if (results?.length > 0) {
-            console.log(`[QR-LOG] EXITO: "${results[0].text}" en ${duration}ms`);
+            console.log(`QR Detectado: ${results[0].text}`);
             return results[0].text;
         }
+
         return null;
 
     } catch (err) {
-        const errorDuration = Date.now() - startTime;
-        
-        // Si hay error de tabla, forzamos purga y reset
-        if (err.message.includes('index') || err.message.includes('table') || err.message.includes('excPtr')) {
-            console.error(`[QR-LOG] Crash de memoria detectado en ${errorDuration}ms`);
+        // Manejo de errores de memoria (excPtr/undefined)
+        if (err.message.includes('excPtr') || err.message.includes('undefined')) {
+            console.error("Crash de memoria WASM. Reiniciando motor...");
             isPrepared = false;
-            try { 
-                await purgeZXingModule(); 
-                console.log(`[QR-LOG] Motor purgado`);
-            } catch (e) {}
+            try { purgeZXingModule(); } catch (e) {}
         } else {
-            console.error(`[QR-LOG] Error en servicio QR: ${err.message}`);
+            console.error(`❌ ERROR_QR_SERVICE: ${err.message}`);
         }
         return null;
     }
