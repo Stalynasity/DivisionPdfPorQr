@@ -31,7 +31,7 @@ export const watchInputFolder = async () => {
                 const base = path.basename(fileName, ext).substring(0, 50); // Tomamos solo los primeros 50
                 const newFileName = `${base}_${Date.now()}${ext}`;
                 const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
-                
+
                 try {
                     await fs.rename(localPath, newPath);
                     fileName = newFileName;
@@ -51,14 +51,14 @@ export const watchInputFolder = async () => {
 
                 tempImgDir = path.join(PATHS.tempImg, `scan-${Date.now()}`);
                 await fs.ensureDir(tempImgDir);
-                
+
                 // LOG 2: Renderizado
                 console.log(`[1/4] Renderizando PDF a imágenes en: ${tempImgDir}`);
                 await renderPdfToImages(localPath, tempImgDir, true);
-                
+
                 const images = (await fs.readdir(tempImgDir)).sort();
                 console.log(`[2/4] Imágenes generadas: ${images.length}`);
-                
+
                 if (images.length === 0) throw new Error("Poppler/pdftoppm no generó ninguna imagen.");
 
                 // LOG 3: Lectura QR
@@ -74,7 +74,7 @@ export const watchInputFolder = async () => {
                 }
 
                 const idLimpio = idCaratulaRaw.replace(/^"+|"+$/g, "").trim();
-                
+
                 const rowNumber = await existsIdCaratula(idLimpio);
 
                 if (!rowNumber) {
@@ -103,7 +103,6 @@ export const watchInputFolder = async () => {
                 console.error(`ERROR_DETALLE: Archivo: ${fileName}`);
                 console.error(` Mensaje: ${err.message || 'Error sin mensaje (null/undefined)'}`);
                 console.error(` Stack: ${err.stack}`); // Esto te dirá la línea exacta del fallo
-                
                 await handleLocalError(localPath, fileName, `FALLO_SISTEMA: ${err.message || 'Desconocido'}`);
             } finally {
                 if (tempImgDir) await fs.remove(tempImgDir).catch(() => { });
@@ -120,15 +119,17 @@ export const watchInputFolder = async () => {
 async function handleLocalError(localPath, fileName, motivo) {
     try {
         console.error(`INFO: ERROR_HANDLER - Subiendo ${fileName} a carpeta de Errores en Drive por: ${motivo}`);
-        
+
         // Leemos el archivo local para subirlo
         const fileContent = await fs.readFile(localPath);
-        
+
         await uploadToDrive(fileName, fileContent, SYSTEM_FOLDERS.ERRORES);
-        await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Error: Motivo: ${motivo} - Revise que su Pdf se genero correctamente en el Correo o Comunicate con el administrador.`);
+
         // Borramos del local para no procesar de nuevo
         await fs.remove(localPath);
     } catch (e) {
         console.error(`CRITICAL: No se pudo subir el archivo de error a Drive: ${e.message}`);
+        await uploadToDrive(fileName, fileContent, SYSTEM_FOLDERS.ERRORES);
+        await fs.remove(localPath);
     }
 }

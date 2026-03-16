@@ -12,11 +12,7 @@ export const renderPdfToImages = async (pdfPath, outputDir, onlyFirstPage = fals
         if (!popplerBin) {
             return reject(new Error("CONFIG_ERROR: Binario de Poppler no definido"));
         }
-        const args = [
-            "-png",
-            "-r", "200",
-            "-singlefile"
-        ];
+        const args = ["-png", "-r", "100"];
 
         if (onlyFirstPage) {
             args.push("-f", "1", "-l", "1");
@@ -24,17 +20,18 @@ export const renderPdfToImages = async (pdfPath, outputDir, onlyFirstPage = fals
 
         const cleanPdfPath = path.normalize(pdfPath);
         // Al usar -singlefile, el nombre será exactamente "page.png"
-        const cleanOutputPath = path.join(outputDir, "page");
+        const outputPrefix = onlyFirstPage ? "page" : "pg";
+        const cleanOutputPath = path.join(outputDir, outputPrefix);
 
         args.push(cleanPdfPath, cleanOutputPath);
 
         const mode = onlyFirstPage ? "PRIMERA_HOJA" : "FULL_PDF";
-        console.log(`📸 [RENDERER] Renderizando calidad original (${mode}): ${path.basename(pdfPath)}`);
+        console.log(` [RENDERER] Renderizando calidad original (${mode}): ${path.basename(pdfPath)}`);
 
         execFile(popplerBin, args, (err, stdout, stderr) => {
             if (err) {
                 const reason = stderr?.trim() || err.message;
-                console.error(`❌ [RENDERER] Error: ${reason}`);
+                console.error(` [RENDERER] Error: ${reason}`);
                 return reject(new Error(`POPPLER_ERROR: ${reason}`));
             }
             resolve(stdout);

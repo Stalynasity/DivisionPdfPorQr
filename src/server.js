@@ -24,7 +24,7 @@ app.listen(PORT, () => {
             console.error(` MOTIVO: ${error.message}`);
             
             if (error.stack) {
-                console.error(`👉 DETALLE: ${error.stack.split('\n')[1]}`); // Muestra la línea del error
+                console.error(`DETALLE: ${error.stack.split('\n')[1]}`); // Muestra la línea del error
             }
         } finally {
             // Importante: No bajar de 4000ms para no saturar las APIs de Google

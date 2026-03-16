@@ -32,7 +32,12 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         // --- RENDERIZADO ---
         // Convierte cada página del PDF en imagen para lectura de QR
         await renderPdfToImages(pdfPath, tmpDir);
-        const files = (await fs.readdir(tmpDir)).sort();
+        const files = (await fs.readdir(tmpDir)).sort((a, b) => {
+            const numA = parseInt(a.match(/\d+/)?.[0] || 0);
+            const numB = parseInt(b.match(/\d+/)?.[0] || 0);
+            return numA - numB;
+        });
+        console.log("Archivos renderizados en total:", files.length);
 
         if (!files.length) throw new Error("PDF_EMPTY_OR_RENDER_FAILED");
         console.log(`INFO: SPLIT_RENDER - ${logId} | Pages: ${files.length}`);
@@ -43,7 +48,8 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             files.slice(1).map(file => limit(async () => {
                 const imgPath = path.join(tmpDir, file);
                 // Extrae el número de página del nombre del archivo (ej: page-1.png -> 0)
-                const pageIdx = parseInt(file.match(/\d+/)[0]) - 1;
+                const match = file.match(/\d+/);
+                const pageIdx = match ? parseInt(match[0]) - 1 : 0;
                 let qrData = null;
                 try {
                     qrData = await readQR(imgPath);
@@ -56,92 +62,164 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         );
 
         // --- SEGMENTACIÓN POR BLOQUES ---
-        const bloques = [];
-        let bloqueActual = [];
-        let codigoActual = null;
+        // const bloques = [];
+        // let bloqueActual = [];
+        // let codigoActual = null;
 
-        for (const { file, qrData, pageIdx } of qrResults) {
-            // Si detecta el patrón "SEP|CODIGO", inicia un nuevo bloque
-            if (qrData?.startsWith("SEP|")) {
-                const nuevoCodigo = qrData.split("|")[1]?.trim() || "UNKNOWN";
-                if (bloqueActual.length) {
-                    bloques.push({
-                        files: [...bloqueActual],
-                        codigoCategoria: codigoActual || "UNKNOWN"
-                    });
+        // for (const item of qrResults) {
+        //     // Validamos que sea un QR de nuestro sistema (SEP|)
+        //     if (item.qrData && item.qrData.startsWith("SEP|")) {
+        //         // Guardar bloque anterior si existía
+        //         if (bloqueActual.length > 0 && codigoActual) {
+        //             bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual });
+        //         }
+
+        //         // Nuevo bloque
+        //         codigoActual = item.qrData.split("|")[1]?.trim() || "DESCONOCIDO";
+        //         bloqueActual = [];
+        //         // Añadimos la página actual como SEPARADOR (para no incluirla en el PDF final)
+        //         bloqueActual.push({ ...item, esSeparador: true });
+        //     } else {
+        //         // Es una página de contenido (o un QR que no es separador)
+        //         if (codigoActual) {
+        //             bloqueActual.push({ ...item, esSeparador: false });
+        //         }
+        //     }
+        // }
+
+
+        // --- 4. SEGMENTACIÓN POR BLOQUES ---
+        const bloques = [];
+        let bloqueActual = { codigo: null, indices: [] };
+
+        for (const item of qrResults) {
+            if (item.qrData?.startsWith("SEP|")) {
+                // Guardar bloque previo si tiene contenido
+                if (bloqueActual.codigo && bloqueActual.indices.length > 0) {
+                    bloques.push({ ...bloqueActual });
                 }
-                bloqueActual = [{ file, pageIdx, esSeparador: true }];
-                codigoActual = nuevoCodigo;
-                continue;
+                // Nuevo separador detectado
+                bloqueActual.codigo = item.qrData.split("|")[1]?.trim() || "DESCONOCIDO";
+                bloqueActual.indices = [];
+            } else if (bloqueActual.codigo) {
+                // Es página de contenido
+                bloqueActual.indices.push(item.pageIdx);
             }
-            bloqueActual.push({ file, pageIdx, esSeparador: false });
         }
+        if (bloqueActual.codigo && bloqueActual.indices.length > 0) bloques.push(bloqueActual);
 
         // Agregar el último bloque detectado
         if (bloqueActual.length) {
             bloques.push({
                 files: bloqueActual,
-                codigoCategoria: codigoActual || "UNKNOWN"
+                codigoCategoria: codigoActual || "DESCONOCIDO"
             });
         }
 
         // --- GENERACIÓN DE PDFs Y CARGA A DRIVE ---
+        // const pdfData = await fs.readFile(pdfPath);
+        // const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
+        // const uploadTasks = [];
+
+        // // 1. Generar y Guardar PDF Completo (Respaldo)
+        // uploadTasks.push((async () => {
+        //     try {
+        //         const pdfCompleto = await PDFDocument.create();
+        //         const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
+        //         const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
+        //         copiedPages.forEach(p => pdfCompleto.addPage(p));
+        //         const bytes = await pdfCompleto.save();
+
+        //         const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
+        //         await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
+
+        //         await updateSheetRow(
+        //             excelMetadata.rowNumber,
+        //             "maestro",
+        //             "Pdf_Completo",
+        //             "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
+        //         );
+
+        //         return { categoria: "PDF_COMPLETO" };
+        //     } catch (e) {
+        //         console.error(`ERROR: FULL_PDF_FAILED - ${logId} | Msg: ${e.message}`);
+        //         return null;
+        //     }
+        // })());
+        // --- 4. GENERACIÓN Y CARGA PARALELIZADA ---
         const pdfData = await fs.readFile(pdfPath);
         const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
-        const uploadTasks = [];
 
-        // 1. Generar y Guardar PDF Completo (Respaldo)
-        uploadTasks.push((async () => {
+        console.log(`${logId} Iniciando subida de archivos (Paralelo)...`);
+
+        // Tarea de respaldo: Usamos el buffer original directamente (más rápido)
+        const backupTask = (async () => {
+            const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
+            const url = await saveToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
+
+            await updateSheetRow(
+                excelMetadata.rowNumber,
+                "maestro",
+                "Pdf_Completo",
+                "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
+            );
+            return { categoria: "PDF_COMPLETO", url };
+        })();
+
+        // Tareas de segmentos: Con límite de 3 para proteger el ancho de banda
+        const uploadLimit = pLimit(3);
+        const segmentTasks = bloques.map((bloque) => uploadLimit(async () => {
             try {
-                const pdfCompleto = await PDFDocument.create();
-                const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
-                const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
-                copiedPages.forEach(p => pdfCompleto.addPage(p));
-                const bytes = await pdfCompleto.save();
+                // Obtenemos solo los índices de las páginas que NO son separadores
+                const indices = bloque.indices || bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
+                if (indices.length === 0) return null;
 
-                const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
-                await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
+                const nuevoPdf = await PDFDocument.create();
+                const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
+                copiedPages.forEach(p => nuevoPdf.addPage(p));
 
-                await updateSheetRow(
-                    excelMetadata.rowNumber,
-                    "maestro",
-                    "Pdf_Completo",
-                    "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
-                );
+                // useObjectStreams: false para compatibilidad y velocidad
+                const bytes = await nuevoPdf.save({ useObjectStreams: false });
+                const nombreSegmento = `${bloque.codigo || bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
+                const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
 
-                return { categoria: "PDF_COMPLETO" };
+                return { categoria: bloque.codigo || bloque.codigoCategoria, url, nombre: nombreSegmento };
             } catch (e) {
-                console.error(`ERROR: FULL_PDF_FAILED - ${logId} | Msg: ${e.message}`);
+                console.error(`${logId} Error en segmento ${bloque.codigo}: ${e.message}`);
                 return null;
             }
-        })());
+        }));
+
+        // Ejecutamos todo en paralelo
+        const allResults = await Promise.all([backupTask, ...segmentTasks]);
 
         // 2. Generar y Guardar Segmentos Individuales
-        bloques.forEach((bloque) => {
-            uploadTasks.push((async () => {
-                try {
-                    const nuevoPdf = await PDFDocument.create();
-                    // Filtramos para no incluir la página del separador QR en el PDF final
-                    const indices = bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
-                    if (indices.length === 0) return null;
+        // bloques.forEach((bloque) => {
+        //     uploadTasks.push((async () => {
+        //         try {
+        //             const nuevoPdf = await PDFDocument.create();
+        //             // Filtramos para no incluir la página del separador QR en el PDF final
+        //             const indices = bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
+        //             if (indices.length === 0) return null;
 
-                    const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
-                    copiedPages.forEach(p => nuevoPdf.addPage(p));
-                    const bytes = await nuevoPdf.save();
+        //             const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
+        //             copiedPages.forEach(p => nuevoPdf.addPage(p));
+        //             const bytes = await nuevoPdf.save();
 
-                    const nombreSegmento = `${bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
-                    const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
+        //             const nombreSegmento = `${bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
+        //             const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
 
-                    return { categoria: bloque.codigoCategoria, url };
-                } catch (e) {
-                    console.error(`ERROR: BLOCK_FAILED - ${logId} | Category: ${bloque.codigoCategoria} | Msg: ${e.message}`);
-                    return null;
-                }
-            })());
-        });
+        //             return { categoria: bloque.codigoCategoria, url };
+        //         } catch (e) {
+        //             console.error(`ERROR: BLOCK_FAILED - ${logId} | Category: ${bloque.codigoCategoria} | Msg: ${e.message}`);
+        //             return null;
+        //         }
+        //     })());
+        // });
 
-        const rawResults = await Promise.all(uploadTasks);
-        const validResults = rawResults.filter(r => r !== null && r.categoria !== "PDF_COMPLETO");
+        // const rawResults = await Promise.all(uploadTasks);
+        // const validResults = rawResults.filter(r => r !== null && r.categoria !== "PDF_COMPLETO");
+        const validResults = allResults.filter(r => r && r.categoria !== "PDF_COMPLETO");
 
         // --- REGISTRO BATCH EN EXCEL ---
         if (validResults.length > 0) {
