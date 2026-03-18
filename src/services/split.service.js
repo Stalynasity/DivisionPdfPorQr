@@ -61,33 +61,6 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             }))
         );
 
-        // --- SEGMENTACIÓN POR BLOQUES ---
-        // const bloques = [];
-        // let bloqueActual = [];
-        // let codigoActual = null;
-
-        // for (const item of qrResults) {
-        //     // Validamos que sea un QR de nuestro sistema (SEP|)
-        //     if (item.qrData && item.qrData.startsWith("SEP|")) {
-        //         // Guardar bloque anterior si existía
-        //         if (bloqueActual.length > 0 && codigoActual) {
-        //             bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual });
-        //         }
-
-        //         // Nuevo bloque
-        //         codigoActual = item.qrData.split("|")[1]?.trim() || "DESCONOCIDO";
-        //         bloqueActual = [];
-        //         // Añadimos la página actual como SEPARADOR (para no incluirla en el PDF final)
-        //         bloqueActual.push({ ...item, esSeparador: true });
-        //     } else {
-        //         // Es una página de contenido (o un QR que no es separador)
-        //         if (codigoActual) {
-        //             bloqueActual.push({ ...item, esSeparador: false });
-        //         }
-        //     }
-        // }
-
-
         // --- 4. SEGMENTACIÓN POR BLOQUES ---
         const bloques = [];
         let bloqueActual = { codigo: null, indices: [] };
@@ -115,37 +88,6 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                 codigoCategoria: codigoActual || "DESCONOCIDO"
             });
         }
-
-        // --- GENERACIÓN DE PDFs Y CARGA A DRIVE ---
-        // const pdfData = await fs.readFile(pdfPath);
-        // const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
-        // const uploadTasks = [];
-
-        // // 1. Generar y Guardar PDF Completo (Respaldo)
-        // uploadTasks.push((async () => {
-        //     try {
-        //         const pdfCompleto = await PDFDocument.create();
-        //         const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
-        //         const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
-        //         copiedPages.forEach(p => pdfCompleto.addPage(p));
-        //         const bytes = await pdfCompleto.save();
-
-        //         const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
-        //         await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
-
-        //         await updateSheetRow(
-        //             excelMetadata.rowNumber,
-        //             "maestro",
-        //             "Pdf_Completo",
-        //             "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
-        //         );
-
-        //         return { categoria: "PDF_COMPLETO" };
-        //     } catch (e) {
-        //         console.error(`ERROR: FULL_PDF_FAILED - ${logId} | Msg: ${e.message}`);
-        //         return null;
-        //     }
-        // })());
         // --- 4. GENERACIÓN Y CARGA PARALELIZADA ---
         const pdfData = await fs.readFile(pdfPath);
         const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
@@ -166,8 +108,8 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             return { categoria: "PDF_COMPLETO", url };
         })();
 
-        // Tareas de segmentos: Con límite de 3 para proteger el ancho de banda
-        const uploadLimit = pLimit(3);
+        // Tareas de segmentos: Con límite de 5 para proteger el ancho de banda
+        const uploadLimit = pLimit(5);
         const segmentTasks = bloques.map((bloque) => uploadLimit(async () => {
             try {
                 // Obtenemos solo los índices de las páginas que NO son separadores
@@ -193,32 +135,6 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         // Ejecutamos todo en paralelo
         const allResults = await Promise.all([backupTask, ...segmentTasks]);
 
-        // 2. Generar y Guardar Segmentos Individuales
-        // bloques.forEach((bloque) => {
-        //     uploadTasks.push((async () => {
-        //         try {
-        //             const nuevoPdf = await PDFDocument.create();
-        //             // Filtramos para no incluir la página del separador QR en el PDF final
-        //             const indices = bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
-        //             if (indices.length === 0) return null;
-
-        //             const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
-        //             copiedPages.forEach(p => nuevoPdf.addPage(p));
-        //             const bytes = await nuevoPdf.save();
-
-        //             const nombreSegmento = `${bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
-        //             const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
-
-        //             return { categoria: bloque.codigoCategoria, url };
-        //         } catch (e) {
-        //             console.error(`ERROR: BLOCK_FAILED - ${logId} | Category: ${bloque.codigoCategoria} | Msg: ${e.message}`);
-        //             return null;
-        //         }
-        //     })());
-        // });
-
-        // const rawResults = await Promise.all(uploadTasks);
-        // const validResults = rawResults.filter(r => r !== null && r.categoria !== "PDF_COMPLETO");
         const validResults = allResults.filter(r => r && r.categoria !== "PDF_COMPLETO");
 
         // --- REGISTRO BATCH EN EXCEL ---

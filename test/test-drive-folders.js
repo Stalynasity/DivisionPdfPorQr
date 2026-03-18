@@ -1,5 +1,5 @@
 import { getOrCreateFolderPath, saveToDrive } from "../src/services/drive.service.js";
-import { getDataFromExcel, updateSheetRow } from "../src/services/excel.service.js";
+import { getDataFromExcel } from "../src/services/excel.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();

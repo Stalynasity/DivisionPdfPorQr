@@ -1,6 +1,10 @@
 # Usamos una imagen ligera de Node 20
 FROM node:20-bullseye-slim
 
+# Configurar Zona Horaria Ecuador
+ENV TZ=America/Guayaquil
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # Instalamos Poppler (necesario para pdftoppm)
 RUN apt-get update && apt-get install -y \
     poppler-utils \

@@ -26,7 +26,16 @@ services:
       - "3010:3010"
     env_file: .env
     environment:
+      - TZ=America/Guayaquil
       - REDIS_HOST=redis
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '6'       # Limita a 6 núcleos de los 8 disponibles
+          memory: 8G      # Techo máximo para evitar que Windows se congele
+        reservations:
+          memory: 2G      # Reserva mínima para que el proceso arranque fluido
     volumes:
       - ./logs:/app/logs
       - ./secrets:/app/secrets # Asegúrate de tener tu llave de Google aquí

@@ -44,7 +44,7 @@ const processor = async (job) => {
         const rootDigitalizados = process.env.ID_CARPETA_DIGITALIZADOS;
         const targetDriveFolderId = await getOrCreateFolderPath(rootDigitalizados, [
             excelMetadata.Usuario || "SIN_USUARIO",
-            excelMetadata.No_Identificacion || "0000000000",
+            excelMetadata.No_Identificacion || "1000000000",
             excelMetadata.Proceso || "GENERAL"
         ]);
 
@@ -76,8 +76,7 @@ const processor = async (job) => {
         }, { spaces: 2 });
 
         // 7. FINALIZACIÓN
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `FINALIZADO EXITOSA | Ticket: tic-${job.id}`);
-        await updateSheetRow(2, "monitoreo", "Ticket_procesados", job.id);
+        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `PROCESO FINALIZADO | En espera de subir al portal...`);
 
         await fs.remove(filePath);
         console.log(`INFO: WORKER_SUCCESS - ${logId}`);

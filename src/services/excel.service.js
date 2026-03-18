@@ -37,6 +37,10 @@ export const insertDocumentRowsBatch = async (rowsArray, App_asignada, retries =
                 "APP-4": process.env.APP4_EXCEL_ARCHIVOS_DRIVE_ID,
                 "APP-5": process.env.APP5_EXCEL_ARCHIVOS_DRIVE_ID,
                 "APP-6": process.env.APP6_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-7": process.env.APP7_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-8": process.env.APP8_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-9": process.env.APP9_EXCEL_ARCHIVOS_DRIVE_ID,
+                "APP-10": process.env.APP10_EXCEL_ARCHIVOS_DRIVE_ID,
             };
 
             const spreadsheetId = apps[App_asignada];

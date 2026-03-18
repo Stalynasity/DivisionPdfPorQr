@@ -1,8 +1,0 @@
-2026-03-13 21:37:56: INFO: STARTUP - API PDF Split inicializada
-2026-03-13 21:40:52: 
-2026-03-13 21:40:52: --- ⚙️ PROCESANDO: 1773433733810_doc00706620260313151938.pdf ---
-2026-03-13 21:40:52: [1/4] Renderizando PDF a imágenes en: PROCESO_DOC/tmp/img/scan-1773438052722
-2026-03-13 21:40:52: INFO: RENDER_START - Mode: PRIMERA_HOJA | File: 1773433733810_doc00706620260313151938.pdf
-2026-03-13 21:40:52: [2/4] Imágenes generadas: 1
-2026-03-13 21:40:52: [3/4] Intentando leer QR de: page-01.png
-2026-03-13 21:40:52: [4/4] Resultado QR Raw: "null"

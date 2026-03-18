@@ -95,8 +95,7 @@ export const watchInputFolder = async () => {
 
                 console.log(`EXITO: Ticket ${job.id} generado.`);
 
-                await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Tu Ticket: ${job.id}`);
-                await updateSheetRow(2, "monitoreo", "Ultimo_Ticket", job.id);
+                await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Archivo recibido en cola - Tu Ticket: ${job.id}`);
 
             } catch (err) {
                 // LOG DE ERROR MEJORADO
