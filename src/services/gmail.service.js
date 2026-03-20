@@ -31,8 +31,8 @@ export const descargarFacturasEmail = async () => {
 
         const res = await gmail.users.messages.list({
             userId: 'me',
-            // Usamos comillas dobles para forzar la frase exacta
-            q: `subject:"[IDX] INDEXACION_AUTOMATICA_APP - alternativa" is:unread -label:${NOMBRE_ETIQUETA} -label:${ETIQUETA_SIN_PDF}`
+            // Eliminamos la palabra "alternativa" para que sea más general
+            q: `subject:("[IDX] INDEXACION_AUTOMATICA_APP -") is:unread -label:${NOMBRE_ETIQUETA}`
         });
 
         const messages = res.data.messages || [];
