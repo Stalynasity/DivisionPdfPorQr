@@ -96,7 +96,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
 
         // Tarea de respaldo: Usamos el buffer original directamente (más rápido)
         const backupTask = (async () => {
-            const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
+            const nombreCompleto = `GEN_${excelMetadata.ID_Caratula}_${jobId}.pdf`;
             const url = await saveToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
 
             await updateSheetRow(
@@ -164,6 +164,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
 
     } catch (err) {
         console.error(`CRITICAL: SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
+        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
         throw err;
     } finally {
         // --- LIMPIEZA DE ARCHIVOS LOCALES ---

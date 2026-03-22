@@ -37,9 +37,6 @@ const processor = async (job) => {
             return { status: 'error_not_found_in_excel' };
         }
 
-        // 2. Actualizar estado inicial
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", "Separación en curso...");
-
         // 3. Preparar carpetas de destino
         const rootDigitalizados = process.env.ID_CARPETA_DIGITALIZADOS;
         const targetDriveFolderId = await getOrCreateFolderPath(rootDigitalizados, [
@@ -47,6 +44,8 @@ const processor = async (job) => {
             excelMetadata.No_Identificacion || "1000000000",
             excelMetadata.Proceso || "GENERAL"
         ]);
+
+
 
         // 4. VALIDACIÓN: Disco
         if (!(await fs.pathExists(filePath))) {
@@ -75,8 +74,10 @@ const processor = async (job) => {
             clienteData: excelMetadata
         }, { spaces: 2 });
 
+        const ID_caratula_sofex = `CAR_${excelMetadata.ID_Caratula.split('_').pop()}_${job.id}`;
+
         // 7. FINALIZACIÓN
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `PROCESO FINALIZADO | En espera de subir al portal...`);
+        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `PROCESO FINALIZADO | ID_SOF: ${ID_caratula_sofex}`);
 
         await fs.remove(filePath);
         console.log(`INFO: WORKER_SUCCESS - ${logId}`);
