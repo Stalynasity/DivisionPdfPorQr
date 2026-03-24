@@ -61,10 +61,12 @@ const processor = async (job) => {
         );
 
         // 6. GUARDAR JSON LOCAL
+        const ID_caratula_sofex = `CAR_${excelMetadata.ID_Caratula.split('_').pop()}_${job.id}`;
+
         const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
         await fs.ensureDir(metadataDir);
-        const safeIdCaratula = idCaratula.replace(/[^a-z0-9]/gi, '_');
-        const jsonPath = path.join(metadataDir, `meta_${safeIdCaratula}_${job.id}.json`);
+        const ID_caratula_sofex_file = idCaratula.replace(/[^a-z0-9]/gi, '-');
+        const jsonPath = path.join(metadataDir, `meta_${ID_caratula_sofex_file}.json`);
 
         await fs.writeJson(jsonPath, {
             jobId: job.id,
@@ -73,8 +75,6 @@ const processor = async (job) => {
             resultMetadata,
             clienteData: excelMetadata
         }, { spaces: 2 });
-
-        const ID_caratula_sofex = `CAR_${excelMetadata.ID_Caratula.split('_').pop()}_${job.id}`;
 
         // 7. FINALIZACIÓN
         await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `PROCESO FINALIZADO | ID_SOF: ${ID_caratula_sofex}`);

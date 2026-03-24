@@ -21,7 +21,7 @@ function buscarPdfsEnPartes(parts, allPdfs = []) {
     return allPdfs;
 }
 
-export const descargarFacturasEmail = async () => {
+export const descargaPDFEmail = async () => {
     const auth = await getOAuthClient();
     const gmail = google.gmail({ version: 'v1', auth });
 
