@@ -65,12 +65,11 @@ const processor = async (job) => {
 
         const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
         await fs.ensureDir(metadataDir);
-        const ID_caratula_sofex_file = idCaratula.replace(/[^a-z0-9]/gi, '-');
+        const ID_caratula_sofex_file = ID_caratula_sofex.replace(/[^a-z0-9]/gi, '-');
         const jsonPath = path.join(metadataDir, `meta_${ID_caratula_sofex_file}.json`);
 
         await fs.writeJson(jsonPath, {
             jobId: job.id,
-            timestamp: new Date().toISOString(),
             originalFileName: fileName,
             resultMetadata,
             clienteData: excelMetadata
@@ -116,8 +115,8 @@ const worker = new Worker("splitQueue", processor, {
     connection,
     concurrency: 3,
     lockDuration: 900000,
-    removeOnComplete: { count: 100 },
-    removeOnFail: { count: 50 }
+    removeOnComplete: { count: 700 },
+    removeOnFail: { count: 100 }
 });
 
 // --- MANEJO DE EVENTOS ---
