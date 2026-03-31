@@ -1,6 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import { watchInputFolder } from "./services/monitor.service.js";
+import { startBatchFlushCycle } from "./services/batch.service.js";
+import { initMaintenanceScheduler } from "./services/maintenance.service.js";
 
 dotenv.config({ path: "./.env" });
 
@@ -10,12 +12,16 @@ app.use(express.json());
 const PORT = process.env.PORT || 3010;
 
 app.listen(PORT, () => {
-    console.log("---------------------------------------------------------");
     console.log(`API PDF Split inicializada en puerto ${PORT}`);
+
+    // 1. Iniciar el vaciado de Redis a Excel (Batch)
+    startBatchFlushCycle();
+
+    // 2. Iniciar el calendario de mantenimiento (Cron)
+    initMaintenanceScheduler();
 
     const startMonitoring = async () => {
         const timestamp = new Date().toLocaleString();
-        
         try {
             await watchInputFolder();
 

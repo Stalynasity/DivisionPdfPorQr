@@ -3,7 +3,7 @@ import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
 import { uploadToDrive } from "./drive.service.js";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
-import { updateSheetRow, existsIdCaratula } from "../services/excel.service.js";
+import { getDataFromExcel, enqueueStatusUpdate } from "../services/excel.service.js"; // <--- Importamos enqueueStatusUpdate
 import fs from "fs-extra";
 import path from "path";
 import dotenv from "dotenv";
@@ -11,8 +11,22 @@ dotenv.config();
 
 const RUTA_LOCAL_ENTRADA = process.env.PATH_ENTRADA_LOCAL;
 const RUTA_LOCAL_ENCOLADO = process.env.PATH_ENCOLADO_LOCAL;
+let isMaintenanceMode = false;
+
+// ¡ELIMINAMOS EL statusUpdateBuffer y el setInterval DE AQUÍ!
+// Ahora de eso se encarga batch.service.js leyendo desde Redis.
+
+export const setMaintenanceMode = (value) => {
+    isMaintenanceMode = value;
+    console.log(`[SYSTEM] Modo Mantenimiento: ${value ? 'ACTIVADO' : 'DESACTIVADO'}`);
+};
 
 export const watchInputFolder = async () => {
+    if (isMaintenanceMode) {
+        console.log("... Sistema en pausa por mantenimiento mensual ...");
+        return;
+    }
+
     try {
         await fs.ensureDir(RUTA_LOCAL_ENTRADA);
         await fs.ensureDir(RUTA_LOCAL_ENCOLADO);
@@ -28,7 +42,7 @@ export const watchInputFolder = async () => {
 
             if (fileName.length > 100) {
                 const ext = path.extname(fileName);
-                const base = path.basename(fileName, ext).substring(0, 50); // Tomamos solo los primeros 50
+                const base = path.basename(fileName, ext).substring(0, 50);
                 const newFileName = `${base}_${Date.now()}${ext}`;
                 const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
 
@@ -37,14 +51,13 @@ export const watchInputFolder = async () => {
                     fileName = newFileName;
                     localPath = newPath;
                 } catch (renameErr) {
-                    console.error(`No se pudo renombrar, se intentará procesar original: ${renameErr.message}`);
+                    console.error(`No se pudo renombrar: ${renameErr.message}`);
                 }
             }
 
             console.log(`\n---PROCESANDO: ${fileName} ---`);
 
             try {
-                // LOG 1: Verificar existencia física
                 if (!await fs.pathExists(localPath)) {
                     throw new Error(`El archivo desapareció antes de procesar: ${localPath}`);
                 }
@@ -52,7 +65,6 @@ export const watchInputFolder = async () => {
                 tempImgDir = path.join(PATHS.tempImg, `scan-${Date.now()}`);
                 await fs.ensureDir(tempImgDir);
 
-                // LOG 2: Renderizado
                 console.log(`[1/4] Renderizando PDF a imágenes en: ${tempImgDir}`);
                 await renderPdfToImages(localPath, tempImgDir, true);
 
@@ -61,7 +73,6 @@ export const watchInputFolder = async () => {
 
                 if (images.length === 0) throw new Error("Poppler/pdftoppm no generó ninguna imagen.");
 
-                // LOG 3: Lectura QR
                 const firstPagePath = path.join(tempImgDir, images[0]);
                 console.log(`[3/4] Intentando leer QR de: ${images[0]}`);
                 const idCaratulaRaw = await readQR(firstPagePath);
@@ -74,10 +85,9 @@ export const watchInputFolder = async () => {
                 }
 
                 const idLimpio = idCaratulaRaw.replace(/^"+|"+$/g, "").trim();
+                const excelMetadata = await getDataFromExcel(idLimpio);
 
-                const rowNumber = await existsIdCaratula(idLimpio);
-
-                if (!rowNumber) {
+                if (!excelMetadata) {
                     console.warn(`WARN: REJECTED - ID ${idLimpio} no está en el Maestro.`);
                     await handleLocalError(localPath, fileName, `ID_INEXISTENTE_${idLimpio}`);
                     continue;
@@ -90,18 +100,19 @@ export const watchInputFolder = async () => {
                 const job = await splitQueue.add("split", {
                     filePath: finalPath,
                     fileName: fileName,
-                    idCaratula: idLimpio
+                    idCaratula: idLimpio,
+                    excelMetadata: excelMetadata
                 });
 
                 console.log(`EXITO: Ticket ${job.id} generado.`);
 
-                await updateSheetRow(rowNumber, "maestro", "Estado_Carga", `Archivo recibido en cola - ${job.id}`);
+                // ---> USAMOS REDIS AQUÍ <---
+                // Esto envía el estado al mismo lugar donde el Worker enviará "PROCESO FINALIZADO"
+                await enqueueStatusUpdate(excelMetadata.rowNumber, `Archivo recibido en cola - ${job.id}`);
 
             } catch (err) {
-                // LOG DE ERROR MEJORADO
                 console.error(`ERROR_DETALLE: Archivo: ${fileName}`);
-                console.error(` Mensaje: ${err.message || 'Error sin mensaje (null/undefined)'}`);
-                console.error(` Stack: ${err.stack}`); // Esto te dirá la línea exacta del fallo
+                console.error(` Mensaje: ${err.message || 'Error sin mensaje'}`);
                 await handleLocalError(localPath, fileName, `FALLO_SISTEMA: ${err.message || 'Desconocido'}`);
             } finally {
                 if (tempImgDir) await fs.remove(tempImgDir).catch(() => { });
@@ -112,23 +123,15 @@ export const watchInputFolder = async () => {
     }
 };
 
-/**
- * Función para manejar errores: Sube el archivo al Drive de errores y lo borra del local
- */
 async function handleLocalError(localPath, fileName, motivo) {
     try {
-        console.error(`INFO: ERROR_HANDLER - Subiendo ${fileName} a carpeta de Errores en Drive por: ${motivo}`);
-
-        // Leemos el archivo local para subirlo
+        console.error(`INFO: ERROR_HANDLER - Subiendo a Errores en Drive por: ${motivo}`);
         const fileContent = await fs.readFile(localPath);
-
         await uploadToDrive(fileName, fileContent, SYSTEM_FOLDERS.ERRORES);
-
-        // Borramos del local para no procesar de nuevo
         await fs.remove(localPath);
     } catch (e) {
         console.error(`CRITICAL: No se pudo subir el archivo de error a Drive: ${e.message}`);
-        await uploadToDrive(fileName, fileContent, SYSTEM_FOLDERS.ERRORES);
-        await fs.remove(localPath);
+        await uploadToDrive(fileName, await fs.readFile(localPath), SYSTEM_FOLDERS.ERRORES).catch(()=>{});
+        await fs.remove(localPath).catch(()=>{});
     }
 }

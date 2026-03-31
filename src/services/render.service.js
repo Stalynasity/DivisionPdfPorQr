@@ -26,7 +26,6 @@ export const renderPdfToImages = async (pdfPath, outputDir, onlyFirstPage = fals
         args.push(cleanPdfPath, cleanOutputPath);
 
         const mode = onlyFirstPage ? "PRIMERA_HOJA" : "FULL_PDF";
-        console.log(` [RENDERER] Renderizando calidad original (${mode}): ${path.basename(pdfPath)}`);
 
         execFile(popplerBin, args, (err, stdout, stderr) => {
             if (err) {

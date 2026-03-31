@@ -10,6 +10,7 @@ module.exports = {
             error_file: "./logs/api-sensor.log",
             out_file: "./logs/api-sensor.log",
             log_date_format: "YYYY-MM-DD HH:mm:ss",
+            max_memory_restart: "500M",
             env: { NODE_ENV: "production" }
         },
         {
@@ -32,6 +33,7 @@ module.exports = {
             error_file: "./logs/gmail.log",
             out_file: "./logs/gmail.log",
             log_date_format: "YYYY-MM-DD HH:mm:ss",
+            max_memory_restart: "500M",
             env: { NODE_ENV: "production" }
         }
     ]

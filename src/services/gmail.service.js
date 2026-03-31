@@ -69,7 +69,6 @@ export const descargaPDFEmail = async () => {
                     // Guardado local
                     await fs.writeFile(filePath, fileBuffer);
 
-                    console.log(`INFO: LOCAL_SAVE - Guardado: ${fileName}`);
                     pdfsGuardadosCount++;
                 } catch (errAttach) {
                     console.error(`ERROR: FS_WRITE - ${part.filename}: ${errAttach.message}`);

@@ -6,7 +6,7 @@ import { saveToDrive } from "./drive.service.js";
 import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
 import pLimit from "p-limit";
 import path from "path";
-import { updateSheetRow, insertDocumentRowsBatch } from "../services/excel.service.js";
+import { updateSheetRow, insertDocumentRowsBatch, enqueueDocumentRows, enqueueCellUpdate } from "../services/excel.service.js";
 
 /**
  * Procesa la división de un PDF local basándose en separadores QR.
@@ -37,7 +37,6 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             const numB = parseInt(b.match(/\d+/)?.[0] || 0);
             return numA - numB;
         });
-        console.log("Archivos renderizados en total:", files.length);
 
         if (!files.length) throw new Error("PDF_EMPTY_OR_RENDER_FAILED");
         console.log(`INFO: SPLIT_RENDER - ${logId} | Pages: ${files.length}`);
@@ -92,22 +91,24 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         const pdfData = await fs.readFile(pdfPath);
         const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
 
-        console.log(`${logId} Iniciando subida de archivos (Paralelo)...`);
 
         // Tarea de respaldo: Usamos el buffer original directamente (más rápido)
         const backupTask = (async () => {
             const nombreCompleto = `GEN_${excelMetadata.ID_Caratula}_${jobId}.pdf`;
+            
+            // 1. Esto se queda igual: Se sube el archivo real a Drive al instante
             const url = await saveToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
 
-            await updateSheetRow(
+            // 2. ¡EL AHORRO API! Enviamos el texto al buffer de Redis
+            await enqueueCellUpdate(
                 excelMetadata.rowNumber,
-                "maestro",
                 "Pdf_Completo",
                 "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
             );
+            
             return { categoria: "PDF_COMPLETO", url };
         })();
-
+        
         // Tareas de segmentos: Con límite de 5 para proteger el ancho de banda
         const uploadLimit = pLimit(5);
         const segmentTasks = bloques.map((bloque) => uploadLimit(async () => {
@@ -151,7 +152,8 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                     fechaAhora                                    // Fecha
                 ]);
 
-                await insertDocumentRowsBatch(excelRows, excelMetadata.APP_ASIGNADA);
+                // await insertDocumentRowsBatch(excelRows, excelMetadata.APP_ASIGNADA);
+                await enqueueDocumentRows(excelRows, excelMetadata.APP_ASIGNADA);
             } catch (e) {
                 console.error(`ERROR: EXCEL_BATCH_FAILED - ${logId} | Msg: ${e.message}`);
             }
@@ -164,7 +166,8 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
 
     } catch (err) {
         console.error(`CRITICAL: SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
+        // await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
+        await enqueueStatusUpdate(excelMetadata.rowNumber, `SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
         throw err;
     } finally {
         // --- LIMPIEZA DE ARCHIVOS LOCALES ---

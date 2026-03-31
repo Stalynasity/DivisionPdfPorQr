@@ -38,5 +38,9 @@ RUN mkdir -p tmp/pdf tmp/img logs/metadata
 
 EXPOSE 3010
 
+# El salvavidas de memoria para procesamiento de PDFs pesados
+# 1536MB = 1.5GB. Obliga a limpiar basura antes del límite de 2G de PM2.
+ENV NODE_OPTIONS="--max-old-space-size=1536"
+
 # Iniciamos usando pm2-runtime para que el contenedor no se detenga
 CMD ["pm2-runtime", "ecosystem.config.cjs"]
