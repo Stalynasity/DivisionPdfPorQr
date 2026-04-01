@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { connection } from "../config/redis.js";
 import { processPdfSplit } from "../services/split.service.js";
-import { getOrCreateFolderPath, uploadToDrive } from "../services/drive.service.js";
+import { getOrCreateFolderPath, uploadFileToDrive } from "../services/drive.service.js";
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
 import { enqueueStatusUpdate } from "../services/excel.service.js"; // <--- Usamos el nuevo buffer
 import fs from "fs-extra";
@@ -18,7 +18,7 @@ const handleFatalError = async (filePath, fileName, errorMsg) => {
     try {
         if (await fs.pathExists(filePath)) {
             const fileBuffer = await fs.readFile(filePath);
-            await uploadToDrive(fileName, fileBuffer, SYSTEM_FOLDERS.ERRORES);
+            await uploadFileToDrive(fileBuffer, fileName, SYSTEM_FOLDERS.ERRORES);
             await fs.remove(filePath);
         }
     } catch (e) {

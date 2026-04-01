@@ -54,10 +54,6 @@ export const uploadFileToDrive = async (fileBuffer, name, folderId, mimeType = "
     }
 };
 
-// Mantenemos alias para no romper las importaciones de tus otros archivos (worker.js, monitor.js)
-export const uploadToDrive = uploadFileToDrive;
-export const saveToDrive = uploadFileToDrive;
-
 /**
  * Mueve un archivo a otra carpeta
  */

@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import { PDFDocument } from "pdf-lib";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
-import { saveToDrive } from "./drive.service.js";
+import { uploadFileToDrive } from "./drive.service.js";
 import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
 import pLimit from "p-limit";
 import path from "path";
@@ -97,7 +97,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             const nombreCompleto = `GEN_${excelMetadata.ID_Caratula}_${jobId}.pdf`;
             
             // 1. Esto se queda igual: Se sube el archivo real a Drive al instante
-            const url = await saveToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
+            const url = await uploadFileToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
 
             // 2. ¡EL AHORRO API! Enviamos el texto al buffer de Redis
             await enqueueCellUpdate(
@@ -124,7 +124,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                 // useObjectStreams: false para compatibilidad y velocidad
                 const bytes = await nuevoPdf.save({ useObjectStreams: false });
                 const nombreSegmento = `${bloque.codigo || bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
-                const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
+                const url = await uploadFileToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
 
                 return { categoria: bloque.codigo || bloque.codigoCategoria, url, nombre: nombreSegmento };
             } catch (e) {

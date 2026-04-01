@@ -1,6 +1,6 @@
 import { splitQueue } from "../jobs/queue.js";
 import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
-import { uploadToDrive } from "./drive.service.js";
+import { uploadFileToDrive } from "./drive.service.js";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
 import { getDataFromExcel, enqueueStatusUpdate } from "../services/excel.service.js"; // <--- Importamos enqueueStatusUpdate
@@ -123,15 +123,41 @@ export const watchInputFolder = async () => {
     }
 };
 
+/**
+ * Función para manejar errores: Sube el archivo al Drive de errores y lo borra del local
+ */
 async function handleLocalError(localPath, fileName, motivo) {
+    console.error(`INFO: ERROR_HANDLER - Iniciando proceso de error para ${fileName}. Motivo: ${motivo}`);
+    
     try {
-        console.error(`INFO: ERROR_HANDLER - Subiendo a Errores en Drive por: ${motivo}`);
+        // 1. Verificamos que el archivo realmente exista antes de intentar leerlo
+        if (!(await fs.pathExists(localPath))) {
+            console.error(`ERROR_HANDLER_ABORTED: El archivo ${localPath} ya no existe en el disco.`);
+            return;
+        }
+
+        console.log(`INFO: Leyendo archivo para subir a errores: ${localPath}`);
         const fileContent = await fs.readFile(localPath);
-        await uploadToDrive(fileName, fileContent, SYSTEM_FOLDERS.ERRORES);
+
+        // 2. Subimos a Drive
+        console.log(`INFO: Subiendo archivo a Drive (Carpeta Errores)...`);
+        await uploadFileToDrive(fileContent, fileName, SYSTEM_FOLDERS.ERRORES);
+        console.log(`SUCCESS: Archivo de error subido correctamente a Drive.`);
+
+        // 3. Borramos del local
         await fs.remove(localPath);
+        console.log(`INFO: Archivo local borrado: ${localPath}`);
+
     } catch (e) {
-        console.error(`CRITICAL: No se pudo subir el archivo de error a Drive: ${e.message}`);
-        await uploadToDrive(fileName, await fs.readFile(localPath), SYSTEM_FOLDERS.ERRORES).catch(()=>{});
-        await fs.remove(localPath).catch(()=>{});
+        console.error(`CRITICAL_ERROR_HANDLER_FAIL: No se pudo subir/borrar el archivo de error. Detalles: ${e.message}`);
+        if (e.stack) console.error(e.stack);
+        
+        // Intentamos al menos borrarlo para que no se quede atascado en un bucle infinito
+        try {
+            await fs.remove(localPath);
+            console.log(`INFO: Se forzó el borrado local de ${fileName} tras fallo de subida.`);
+        } catch (removeErr) {
+            console.error(`FATAL: Tampoco se pudo borrar el archivo local: ${removeErr.message}`);
+        }
     }
 }
