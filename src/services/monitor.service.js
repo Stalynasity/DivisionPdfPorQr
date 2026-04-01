@@ -21,6 +21,28 @@ export const setMaintenanceMode = (value) => {
     console.log(`[SYSTEM] Modo Mantenimiento: ${value ? 'ACTIVADO' : 'DESACTIVADO'}`);
 };
 
+/**
+ * Valida si un archivo ya terminó de copiarse en el disco duro.
+ */
+const isFileStable = async (filePath) => {
+    try {
+        const stat1 = await fs.stat(filePath);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Esperamos medio segundo
+        const stat2 = await fs.stat(filePath);
+
+        // Si el tamaño sigue creciendo o está vacío (0 bytes), no está listo
+        if (stat1.size !== stat2.size || stat2.size === 0) {
+            return false;
+        }
+        const fd = await fs.open(filePath, 'r+');
+        await fs.close(fd);
+
+        return true; // El archivo está estable y libre
+    } catch (error) {
+        return false; // Está bloqueado, devolvemos falso
+    }
+};
+
 export const watchInputFolder = async () => {
     if (isMaintenanceMode) {
         console.log("... Sistema en pausa por mantenimiento mensual ...");
@@ -37,25 +59,36 @@ export const watchInputFolder = async () => {
         if (pdfFiles.length === 0) return;
 
         for (const fileName of pdfFiles) {
-            const localPath = path.join(RUTA_LOCAL_ENTRADA, fileName);
+            let localPath = path.join(RUTA_LOCAL_ENTRADA, fileName); // Cambiado a 'let' para poder reasignar
+            let currentFileName = fileName;
+
+            // --- NUEVA VALIDACIÓN DE ESTABILIDAD ---
+            const isStable = await isFileStable(localPath);
+            if (!isStable) {
+                // No hacemos ruido, solo lo omitimos. En 4 segundos el monitor volverá a intentarlo.
+                console.log(`[INFO] Archivo copiándose o bloqueado: ${currentFileName}. Esperando...`);
+                continue; 
+            }
+
             let tempImgDir = null;
 
-            if (fileName.length > 100) {
-                const ext = path.extname(fileName);
-                const base = path.basename(fileName, ext).substring(0, 50);
+            // Renombrado (solo se ejecuta si el archivo ya está estable)
+            if (currentFileName.length > 100) {
+                const ext = path.extname(currentFileName);
+                const base = path.basename(currentFileName, ext).substring(0, 50);
                 const newFileName = `${base}_${Date.now()}${ext}`;
                 const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
 
                 try {
                     await fs.rename(localPath, newPath);
-                    fileName = newFileName;
+                    currentFileName = newFileName;
                     localPath = newPath;
                 } catch (renameErr) {
                     console.error(`No se pudo renombrar: ${renameErr.message}`);
                 }
             }
 
-            console.log(`\n---PROCESANDO: ${fileName} ---`);
+            console.log(`\n---PROCESANDO: ${currentFileName} ---`);
 
             try {
                 if (!await fs.pathExists(localPath)) {
@@ -80,7 +113,7 @@ export const watchInputFolder = async () => {
 
                 if (!idCaratulaRaw) {
                     console.warn(`WARN: REJECTED - No se detectó QR en la primera página.`);
-                    await handleLocalError(localPath, fileName, "SIN_QR");
+                    await handleLocalError(localPath, currentFileName, "SIN_QR");
                     continue;
                 }
 
@@ -89,31 +122,29 @@ export const watchInputFolder = async () => {
 
                 if (!excelMetadata) {
                     console.warn(`WARN: REJECTED - ID ${idLimpio} no está en el Maestro.`);
-                    await handleLocalError(localPath, fileName, `ID_INEXISTENTE_${idLimpio}`);
+                    await handleLocalError(localPath, currentFileName, `ID_INEXISTENTE_${idLimpio}`);
                     continue;
                 }
 
                 // ÉXITO
-                const finalPath = path.join(RUTA_LOCAL_ENCOLADO, fileName);
+                const finalPath = path.join(RUTA_LOCAL_ENCOLADO, currentFileName);
                 await fs.move(localPath, finalPath, { overwrite: true });
 
                 const job = await splitQueue.add("split", {
                     filePath: finalPath,
-                    fileName: fileName,
+                    fileName: currentFileName,
                     idCaratula: idLimpio,
                     excelMetadata: excelMetadata
                 });
 
                 console.log(`EXITO: Ticket ${job.id} generado.`);
 
-                // ---> USAMOS REDIS AQUÍ <---
-                // Esto envía el estado al mismo lugar donde el Worker enviará "PROCESO FINALIZADO"
                 await enqueueStatusUpdate(excelMetadata.rowNumber, `Archivo recibido en cola - ${job.id}`);
 
             } catch (err) {
-                console.error(`ERROR_DETALLE: Archivo: ${fileName}`);
+                console.error(`ERROR_DETALLE: Archivo: ${currentFileName}`);
                 console.error(` Mensaje: ${err.message || 'Error sin mensaje'}`);
-                await handleLocalError(localPath, fileName, `FALLO_SISTEMA: ${err.message || 'Desconocido'}`);
+                await handleLocalError(localPath, currentFileName, `FALLO_SISTEMA: ${err.message || 'Desconocido'}`);
             } finally {
                 if (tempImgDir) await fs.remove(tempImgDir).catch(() => { });
             }
@@ -123,14 +154,10 @@ export const watchInputFolder = async () => {
     }
 };
 
-/**
- * Función para manejar errores: Sube el archivo al Drive de errores y lo borra del local
- */
 async function handleLocalError(localPath, fileName, motivo) {
     console.error(`INFO: ERROR_HANDLER - Iniciando proceso de error para ${fileName}. Motivo: ${motivo}`);
     
     try {
-        // 1. Verificamos que el archivo realmente exista antes de intentar leerlo
         if (!(await fs.pathExists(localPath))) {
             console.error(`ERROR_HANDLER_ABORTED: El archivo ${localPath} ya no existe en el disco.`);
             return;
@@ -139,12 +166,10 @@ async function handleLocalError(localPath, fileName, motivo) {
         console.log(`INFO: Leyendo archivo para subir a errores: ${localPath}`);
         const fileContent = await fs.readFile(localPath);
 
-        // 2. Subimos a Drive
         console.log(`INFO: Subiendo archivo a Drive (Carpeta Errores)...`);
         await uploadFileToDrive(fileContent, fileName, SYSTEM_FOLDERS.ERRORES);
         console.log(`SUCCESS: Archivo de error subido correctamente a Drive.`);
 
-        // 3. Borramos del local
         await fs.remove(localPath);
         console.log(`INFO: Archivo local borrado: ${localPath}`);
 
@@ -152,7 +177,6 @@ async function handleLocalError(localPath, fileName, motivo) {
         console.error(`CRITICAL_ERROR_HANDLER_FAIL: No se pudo subir/borrar el archivo de error. Detalles: ${e.message}`);
         if (e.stack) console.error(e.stack);
         
-        // Intentamos al menos borrarlo para que no se quede atascado en un bucle infinito
         try {
             await fs.remove(localPath);
             console.log(`INFO: Se forzó el borrado local de ${fileName} tras fallo de subida.`);
