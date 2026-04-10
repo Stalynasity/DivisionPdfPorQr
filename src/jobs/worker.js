@@ -3,7 +3,7 @@ import { connection } from "../config/redis.js";
 import { processPdfSplit } from "../services/split.service.js";
 import { getOrCreateFolderPath, uploadFileToDrive } from "../services/drive.service.js";
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
-import { enqueueStatusUpdate } from "../services/excel.service.js"; // <--- Usamos el nuevo buffer
+import { enqueueStatusUpdate, getMaintenanceRedis } from "../services/excel.service.js";
 import fs from "fs-extra";
 import dotenv from "dotenv";
 import path from "path";
@@ -48,6 +48,14 @@ const saveLocalMetadata = async (idSofex, jobId, fileName, resultMetadata, excel
 // ========================================================
 
 const processor = async (job) => {
+
+    const isMaintenance = await getMaintenanceRedis();
+    if (isMaintenance) {
+        // Devolvemos el trabajo a la cola para que se procese cuando acabe el mantenimiento
+        throw new Error("WAIT_MAINTENANCE: El worker intentó procesar pero el sistema entró en mantenimiento.");
+    }
+
+
     const { filePath, fileName, idCaratula, excelMetadata } = job.data;
     const logId = `TICKET:${job.id} | ID:${idCaratula}`;
     const maxRetries = job.opts.attempts || 3;

@@ -44,6 +44,7 @@ export const descargaPDFEmail = async () => {
 
             if (todasLasPartes.length === 0) {
                 console.warn(`WARN: GMAIL - Mensaje ${msgInfo.id} sin PDFs. Archivando...`);
+                await enviarRespuestaError(gmail, msg.data);
                 await marcarComoProcesado(gmail, msgInfo.id, ETIQUETA_SIN_PDF);
                 continue;
             }
@@ -75,10 +76,15 @@ export const descargaPDFEmail = async () => {
                 }
             }
 
+            // EVALUACIÓN FINAL
             if (pdfsGuardadosCount > 0) {
                 await enviarRespuesta(gmail, msg.data);
                 await marcarComoProcesado(gmail, msgInfo.id, NOMBRE_ETIQUETA);
                 console.log(`INFO: SUCCESS - Mensaje ${msgInfo.id} finalizado.`);
+            } else {
+                console.warn(`WARN: GMAIL - Mensaje ${msgInfo.id} con error de guardado/corrupción. Notificando...`);
+                await enviarRespuestaError(gmail, msg.data); // <-- NUEVO: Envía correo de error
+                await marcarComoProcesado(gmail, msgInfo.id, ETIQUETA_SIN_PDF);
             }
         }
     } catch (error) {
@@ -127,6 +133,36 @@ async function enviarRespuesta(gmail, originalMsg) {
       <p style="font-size: 11px; color: #888;">Sistema Automatizado de Digitalización | No responder a este correo.</p>
     </div>
   `;
+
+    const str = [
+        `To: ${from}`, `Subject: Re: ${subject}`,
+        `In-Reply-To: ${originalMsg.id}`, `References: ${originalMsg.id}`,
+        `Content-Type: text/html; charset=utf-8`, `MIME-Version: 1.0`, '', cuerpoHTML
+    ].join('\r\n');
+
+    const encodedMail = Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encodedMail, threadId } });
+}
+
+async function enviarRespuestaError(gmail, originalMsg) {
+    const threadId = originalMsg.threadId;
+    const subject = originalMsg.payload.headers.find(h => h.name === 'Subject')?.value;
+    const from = originalMsg.payload.headers.find(h => h.name === 'From')?.value;
+
+    const cuerpoHTML = `
+    <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; border: 1px solid #eee; padding: 20px; border-radius: 8px;">
+      <h2 style="color: #d32f2f; margin-top: 0;">Error en la Recepción del Documento</h2>
+      <p>Estimado usuario,</p>
+      <p><strong>No se ha podido recibir ni procesar su documento.</strong></p>
+      <div style="background-color: #ffebee; border-left: 4px solid #f44336; padding: 10px 15px; margin: 20px 0;">
+        <strong>Atención requerida:</strong><br>
+        Por favor, revise que el correo contenga el documento adjunto en <strong>formato PDF</strong> y verifique que el archivo no esté corrupto.
+      </div>
+      <p>Una vez corregido el problema, le solicitamos que vuelva a enviar el documento para su digitalización.</p>
+      <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+      <p style="font-size: 11px; color: #888;">Sistema Automatizado de Digitalización | No responder a este correo.</p>
+    </div>
+    `;
 
     const str = [
         `To: ${from}`, `Subject: Re: ${subject}`,

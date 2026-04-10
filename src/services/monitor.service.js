@@ -3,7 +3,7 @@ import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
 import { uploadFileToDrive } from "./drive.service.js";
 import { renderPdfToImages } from "./render.service.js";
 import { readQR } from "./qr.service.js";
-import { getDataFromExcel, enqueueStatusUpdate } from "../services/excel.service.js"; // <--- Importamos enqueueStatusUpdate
+import { getDataFromExcel, enqueueStatusUpdate, getMaintenanceRedis } from "../services/excel.service.js"; // <--- Importamos enqueueStatusUpdate
 import fs from "fs-extra";
 import path from "path";
 import dotenv from "dotenv";
@@ -12,9 +12,6 @@ dotenv.config();
 const RUTA_LOCAL_ENTRADA = process.env.PATH_ENTRADA_LOCAL;
 const RUTA_LOCAL_ENCOLADO = process.env.PATH_ENCOLADO_LOCAL;
 let isMaintenanceMode = false;
-
-// ¡ELIMINAMOS EL statusUpdateBuffer y el setInterval DE AQUÍ!
-// Ahora de eso se encarga batch.service.js leyendo desde Redis.
 
 export const setMaintenanceMode = (value) => {
     isMaintenanceMode = value;
@@ -44,8 +41,10 @@ const isFileStable = async (filePath) => {
 };
 
 export const watchInputFolder = async () => {
-    if (isMaintenanceMode) {
-        console.log("... Sistema en pausa por mantenimiento mensual ...");
+    const isMaintenance = await getMaintenanceRedis();
+
+    if (isMaintenance) {
+        console.log("... [!] Sistema en PAUSA por mantenimiento mensual (Redis) ...");
         return;
     }
 

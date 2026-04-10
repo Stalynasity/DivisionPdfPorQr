@@ -13,6 +13,7 @@ dotenv.config();
 const redisClient = new Redis(connection);
 const BATCH_KEY_PREFIX = "excel_buffer:";
 const STATUS_KEY_PREFIX = "excel_status_buffer";
+const MAINTENANCE_KEY = "system:maintenance_mode";
 
 const SPREADSHEET_ID = process.env.EXCEL_DIGITALIZACION;
 const SPREADSHEET_ID_MONITOREO = process.env.EXCEL_MONITOREO_ID;
@@ -40,6 +41,22 @@ const TABLE_CONFIG = {
 export const enqueueCellUpdate = async (rowNumber, columnName, value) => {
     if (!rowNumber) return;
     await redisClient.rpush(STATUS_KEY_PREFIX, JSON.stringify({ rowNumber, columnName, value }));
+};
+
+/**
+ * Persiste el estado de mantenimiento en Redis
+ */
+export const setMaintenanceRedis = async (value) => {
+    await redisClient.set(MAINTENANCE_KEY, value ? "true" : "false");
+    console.log(`[REDIS] Modo Mantenimiento actualizado a: ${value}`);
+};
+
+/**
+ * Obtiene el estado de mantenimiento desde Redis
+ */
+export const getMaintenanceRedis = async () => {
+    const status = await redisClient.get(MAINTENANCE_KEY);
+    return status === "true";
 };
 
 // ============================================================================
@@ -251,53 +268,62 @@ export const cleanOldRows = async () => {
         });
 
         const rows = res.data.values;
-        if (!rows || rows.length <= 1) {
-            console.log("[CLEANUP] No hay datos suficientes para limpiar.");
-            return;
-        }
+        if (!rows || rows.length <= 1) return;
 
         const headers = rows[0];
-        const fechaIdx = headers.indexOf("Fecha_creacion"); 
-        
-        if (fechaIdx === -1) {
-            console.error("[CLEANUP] CRÍTICO: Columna 'Fecha_creacion' no encontrada.");
-            return;
-        }
+        const fechaIdx = headers.indexOf("Fecha_creacion");
+        const idCaratulaIdx = headers.indexOf("ID_Caratula");
+        const estadoCargaIdx = headers.indexOf("Estado_Carga");
 
         const hoy = new Date();
-        const limiteMs = 21 * 24 * 60 * 60 * 1000; // 21 días
+        const limite21Dias = 21 * 24 * 60 * 60 * 1000;
+        const limite30Dias = 30 * 24 * 60 * 60 * 1000; // 1 mes aproximado
 
         const filasConservadas = rows.filter((row, idx) => {
-            if (idx === 0) return true; 
+            if (idx === 0) return true; // Encabezado
+
+            // 1. Eliminar si el ID está vacío
+            const idValue = row[idCaratulaIdx];
+            if (!idValue || String(idValue).trim() === "") return false;
+
+            const estado = String(row[estadoCargaIdx] || "").trim();
+            const fechaFila = parseCustomDate(row[fechaIdx]);
             
-            const valorFechaStr = row[fechaIdx];
-            if (!valorFechaStr) return true; 
+            // Si no hay fecha, por seguridad lo dejamos (o podrías decidir borrarlo)
+            if (!fechaFila) return true;
 
-            const fechaFila = parseCustomDate(valorFechaStr);
-            if (!fechaFila || isNaN(fechaFila.getTime())) return true; 
+            const antiguedad = hoy - fechaFila;
 
-            return (hoy - fechaFila) < limiteMs;
+            // 2. REGLA DE ÉXITO: Si no cambia de caratula creada, se borra a los 21 días. Si cambia, se le da un mes.
+            if (estado.includes("CARATULA CREADA")) {
+                return antiguedad < limite21Dias;
+            }
+
+            return antiguedad < limite30Dias;
         });
 
-        const filasBorradas = rows.length - filasConservadas.length;
-
-        if (filasBorradas > 0) {
-            console.log(`[CLEANUP] Borrando ${filasBorradas} filas con más de 21 días...`);
+        if (rows.length !== filasConservadas.length) {
+            // BACKUP (Llamado desde el scheduler antes de esta función)
+            
             await sheets.spreadsheets.values.clear({
                 spreadsheetId: SPREADSHEET_ID,
                 range: SHEET_NAME_MAESTRO,
             });
-            await sheets.spreadsheets.values.update({
-                spreadsheetId: SPREADSHEET_ID,
-                range: SHEET_NAME_MAESTRO,
-                valueInputOption: "USER_ENTERED",
-                requestBody: { values: filasConservadas }
-            });
-            console.log(`[CLEANUP] Listo. Quedan ${filasConservadas.length} filas.`);
-        } else {
-            console.log("[CLEANUP] Ninguna fila superó los 21 días.");
+
+            const CHUNK_SIZE = 5000;
+            for (let i = 0; i < filasConservadas.length; i += CHUNK_SIZE) {
+                const chunk = filasConservadas.slice(i, i + CHUNK_SIZE);
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId: SPREADSHEET_ID,
+                    range: `${SHEET_NAME_MAESTRO}!A${i + 1}`,
+                    valueInputOption: "USER_ENTERED",
+                    requestBody: { values: chunk }
+                });
+            }
+            console.log(`[CLEANUP] Finalizado. Filas originales: ${rows.length}, Conservadas: ${filasConservadas.length}`);
         }
     } catch (error) {
         console.error(`ERROR: CLEANUP_FAILED - ${error.message}`);
+        throw error;
     }
 };

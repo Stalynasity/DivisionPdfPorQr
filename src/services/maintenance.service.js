@@ -1,48 +1,57 @@
 import nodeCron from "node-cron";
-import { setMaintenanceMode } from "./monitor.service.js";
+import { setMaintenanceRedis, cleanOldRows } from "./excel.service.js"; 
 import { splitQueue } from "../jobs/queue.js";
-import { cleanOldRows } from "./excel.service.js";
+import { backupFile } from "./drive.service.js";
 
 export const initMaintenanceScheduler = () => {
-    console.log("--- Scheduler de Mantenimiento Mensual Inicializado ---");
+    console.log("--- Scheduler de Mantenimiento Semanal Inicializado (Domingos 5:00 PM) ---");
 
-    // Se ejecuta cada Domingo a las 00:00
-    nodeCron.schedule("0 0 * * 0", async () => {
-        const hoy = new Date();
-        const ultimoDomingo = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-        ultimoDomingo.setDate(ultimoDomingo.getDate() - ultimoDomingo.getDay());
+    // Cron corregido: 0 (minuto), 17 (hora 5 PM), * (día), * (mes), 0 (domingo)
+    nodeCron.schedule("0 17 * * 0", async () => {
+        
+        try {
+            console.log("\n--- [!] INICIANDO VENTANA DE MANTENIMIENTO SEMANAL ---");
 
-        // Validar si hoy es el último domingo del mes
-        if (hoy.getDate() === ultimoDomingo.getDate()) {
-            try {
-                console.log("--- INICIANDO VENTANA DE MANTENIMIENTO ---");
-                
-                // 1. Pausar entrada de nuevos archivos
-                setMaintenanceMode(true);
+            // Esto detiene el monitor y evita que entren nuevos archivos
+            await setMaintenanceRedis(true);
 
-                // 2. Esperar a que los workers terminen lo que tienen activo
-                let counts = await splitQueue.getJobCounts('wait', 'active');
-                let pending = counts.wait + counts.active;
+            // 2. DRENADO: Esperar a que los Workers terminen lo que ya está en curso
+            const inicioEspera = Date.now();
+            const MAX_ESPERA = 30 * 60 * 1000; // 30 minutos máximo
 
-                while (pending > 0) {
-                    console.log(`[MANTENIMIENTO] Esperando ${pending} trabajos pendientes...`);
-                    await new Promise(r => setTimeout(r, 10000)); // Esperar 10 seg
-                    counts = await splitQueue.getJobCounts('wait', 'active');
-                    pending = counts.wait + counts.active;
+            let counts = await splitQueue.getJobCounts('wait', 'active');
+            let pending = counts.wait + counts.active;
+
+            while (pending > 0) {
+                if ((Date.now() - inicioEspera) > MAX_ESPERA) {
+                    console.warn("[MANTENIMIENTO] Timeout alcanzado. Forzando continuación para no bloquear el sistema.");
+                    break;
                 }
-
-                // 3. Ejecutar la limpieza de 21 días
-                console.log("[MANTENIMIENTO] Cola vacía. Limpiando Excel...");
-                await cleanOldRows();
-
-                // 4. Reabrir el sistema
-                setMaintenanceMode(false);
-                console.log("--- MANTENIMIENTO FINALIZADO CON ÉXITO ---");
-
-            } catch (err) {
-                console.error("ERROR EN MANTENIMIENTO:", err.message);
-                setMaintenanceMode(false); // Reabrir por seguridad si algo falla
+                
+                console.log(`[MANTENIMIENTO] Esperando: ${counts.wait} en cola, ${counts.active} procesándose...`);
+                await new Promise(r => setTimeout(r, 15000)); // Esperar 15 seg antes de re-chequear
+                
+                counts = await splitQueue.getJobCounts('wait', 'active');
+                pending = counts.wait + counts.active;
             }
+
+            // 3. SEGURIDAD: Crear Backup en Drive antes de tocar el Excel
+            console.log("[MANTENIMIENTO] Creando copia de seguridad del Maestro en Drive...");
+            await backupFile(process.env.EXCEL_DIGITALIZACION);
+            console.log("[MANTENIMIENTO] Respaldo confirmado con éxito.");
+
+            // 4. LIMPIEZA: Ejecutar el borrado de filas antiguas (>21 días)
+            console.log("[MANTENIMIENTO] Iniciando limpieza de registros antiguos en Excel...");
+            await cleanOldRows();
+
+        } catch (err) {
+            // Si algo falla (Drive, Redis o Excel), lo capturamos aquí
+            console.error("!!! ERROR CRÍTICO EN CICLO MANTENIMIENTO !!!");
+            console.error(`DETALLE: ${err.message}`);
+        } finally {
+            // 5. APERTURA: SIEMPRE reabrimos el sistema al finalizar o fallar
+            await setMaintenanceRedis(false);
+            console.log("--- [!] MANTENIMIENTO FINALIZADO - SISTEMA REABIERTO ---\n");
         }
     });
 };

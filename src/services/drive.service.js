@@ -141,3 +141,40 @@ export const getOrCreateFolderPath = async (rootFolderId, pathArray) => {
 
     return currentParentId;
 };
+
+/**
+ * Crea una copia de seguridad de un archivo existente en una carpeta específica
+ */
+export const backupFile = async (fileId, backupFolderName = "BACKUPS_SISTEMA") => {
+    try {
+        const drive = await getDriveClient();
+        
+        // 1. Obtener el nombre del archivo original para ponerle fecha al backup
+        const originalFile = await drive.files.get({ fileId, fields: "name" });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupName = `BACKUP_${timestamp}_${originalFile.data.name}`;
+
+        // 2. Buscar o crear la carpeta de Backups (usando tu helper de caché)
+        // Usamos el ID de la carpeta raíz de digitalizados o una definida en env
+        const rootId = process.env.ID_CARPETA_ORIGEN_BACKUP; 
+        const backupFolderId = await getOrCreateFolderPath(rootId, [backupFolderName]);
+
+        console.log(`[DRIVE] Generando backup: ${backupName}...`);
+
+        // 3. Ejecutar la copia
+        const res = await drive.files.copy({
+            fileId: fileId,
+            requestBody: {
+                name: backupName,
+                parents: [backupFolderId]
+            },
+            supportsAllDrives: true
+        });
+
+        console.log(`[SUCCESS] Backup creado con ID: ${res.data.id}`);
+        return res.data.id;
+    } catch (error) {
+        console.error(`ERROR: DRIVE_BACKUP_FAILED - ${error.message}`);
+        throw new Error("No se pudo realizar el backup de seguridad. Abortando mantenimiento.");
+    }
+};
