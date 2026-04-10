@@ -3,6 +3,7 @@ import { getOAuthClient } from "./auth.oauth.js";
 import dotenv from "dotenv";
 import Redis from "ioredis";
 import { connection } from "../config/redis.js";
+import { backupFile } from "./drive.service.js";
 
 dotenv.config();
 
@@ -103,12 +104,32 @@ const getColumnLetterByName = async (spreadsheetId, sheetName, columnName) => {
 };
 
 const parseCustomDate = (dateString) => {
-    if (!dateString) return null;
+    if (!dateString || typeof dateString !== 'string') return null;
+    
     try {
-        const [datePart, timePart = "00:00:00"] = dateString.split(' ');
-        const [day, month, year] = datePart.split('/');
-        const [hour, minute, second] = timePart.split(':');
-        return new Date(year, month - 1, day, hour, minute, second);
+        // Divide "2026-02-12 20:59:01" en ["2026-02-12", "20:59:01"]
+        const parts = dateString.trim().split(' ');
+        const datePart = parts[0];
+        const timePart = parts[1] || "00:00:00";
+
+        let day, month, year;
+
+        if (datePart.includes('-')) {
+            // Formato YYYY-MM-DD (el de tu imagen)
+            [year, month, day] = datePart.split('-').map(Number);
+        } else if (datePart.includes('/')) {
+            // Formato DD/MM/YYYY
+            [day, month, year] = datePart.split('/').map(Number);
+        } else {
+            return null;
+        }
+
+        const [hour, minute, second] = timePart.split(':').map(Number);
+        
+        // El mes en JS es 0-11
+        const dateObj = new Date(year, month - 1, day, hour, minute, second);
+        
+        return isNaN(dateObj.getTime()) ? null : dateObj;
     } catch (error) {
         return null;
     }
@@ -325,5 +346,105 @@ export const cleanOldRows = async () => {
     } catch (error) {
         console.error(`ERROR: CLEANUP_FAILED - ${error.message}`);
         throw error;
+    }
+};
+
+export const cleanAppDriveExcels = async () => {
+    const APP_ENV_KEYS = [
+        "APP1_EXCEL_ARCHIVOS_DRIVE_ID", "APP2_EXCEL_ARCHIVOS_DRIVE_ID", 
+        "APP3_EXCEL_ARCHIVOS_DRIVE_ID", "APP4_EXCEL_ARCHIVOS_DRIVE_ID", 
+        "APP5_EXCEL_ARCHIVOS_DRIVE_ID", "APP6_EXCEL_ARCHIVOS_DRIVE_ID", 
+        "APP7_EXCEL_ARCHIVOS_DRIVE_ID", "APP8_EXCEL_ARCHIVOS_DRIVE_ID", 
+        "APP9_EXCEL_ARCHIVOS_DRIVE_ID", "APP10_EXCEL_ARCHIVOS_DRIVE_ID"
+    ];
+
+    const sheets = await getSheetsClient();
+    const hoy = new Date();
+    // Definimos el límite de 21 días exactos
+    const limiteMs = 21 * 24 * 60 * 60 * 1000;
+    const sheetName = process.env.SHEET_NAME_DRIVE || "Archivos_Drive";
+
+    for (const envKey of APP_ENV_KEYS) {
+        try {
+            const spreadsheetId = process.env[envKey];
+            if (!spreadsheetId) continue;
+
+            console.log(`\n[CLEANUP-APPS] Analizando ${envKey}...`);
+
+            const res = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range: `${sheetName}!A:Z`,
+            });
+
+            const rows = res.data.values;
+            if (!rows || rows.length <= 1) {
+                console.log(`[SKIP] ${envKey} no tiene datos para procesar.`);
+                continue;
+            }
+
+            const headers = rows[0];
+            const fechaIdx = headers.indexOf("FECHA_CREACION");
+
+            if (fechaIdx === -1) {
+                console.warn(`[WARN] No se encontró la columna FECHA_CREACION en ${envKey}.`);
+                continue;
+            }
+
+            // --- FILTRADO SEGURO ---
+            const filasConservadas = rows.filter((row, idx) => {
+                if (idx === 0) return true; // Siempre conservar encabezados
+
+                const valorFechaRaw = row[fechaIdx];
+                if (!valorFechaRaw) return true; // Si no hay fecha, no borramos por precaución
+
+                const fechaFila = parseCustomDate(valorFechaRaw);
+                
+                // VALIDACIÓN CRÍTICA: Si el parseo falla (null o inválida), CONSERVAMOS.
+                if (!fechaFila || isNaN(fechaFila.getTime())) {
+                    return true; 
+                }
+
+                const antiguedadMs = hoy - fechaFila;
+
+                // Conservar solo si la antigüedad es MENOR o IGUAL a 21 días.
+                return antiguedadMs <= limiteMs;
+            });
+
+            // --- PROTECCIÓN ANTIBORRADO MASIVO ---
+            // Si el resultado es que solo queda el encabezado pero el original tenía muchos datos,
+            // detenemos el proceso porque es probable que el formato de fecha de Google Sheets haya cambiado.
+            if (filasConservadas.length === 1 && rows.length > 5) {
+                console.error(`[!] ABORTADO: Se detectó un intento de borrado total en ${envKey}. Verifique el formato de fecha.`);
+                continue;
+            }
+
+            if (rows.length !== filasConservadas.length) {
+                console.log(`[BACKUP] Realizando respaldo de seguridad de ${envKey}...`);
+                await backupFile(spreadsheetId, 'BACKUPS_ARCHIVOS_DRIVE');
+
+                console.log(`[ACTION] Eliminando ${rows.length - filasConservadas.length} filas con más de 21 días.`);
+                
+                // 1. Limpiar hoja
+                await sheets.spreadsheets.values.clear({ spreadsheetId, range: sheetName });
+
+                // 2. Insertar sobrevivientes por bloques
+                const CHUNK_SIZE = 5000;
+                for (let i = 0; i < filasConservadas.length; i += CHUNK_SIZE) {
+                    const chunk = filasConservadas.slice(i, i + CHUNK_SIZE);
+                    await sheets.spreadsheets.values.update({
+                        spreadsheetId,
+                        range: `${sheetName}!A${i + 1}`,
+                        valueInputOption: "USER_ENTERED",
+                        requestBody: { values: chunk }
+                    });
+                }
+                console.log(`[SUCCESS] ${envKey} actualizado correctamente.`);
+            } else {
+                console.log(`[INFO] No hay registros mayores a 21 días en ${envKey}.`);
+            }
+
+        } catch (error) {
+            console.error(`[ERROR] Fallo en ${envKey}: ${error.message}`);
+        }
     }
 };

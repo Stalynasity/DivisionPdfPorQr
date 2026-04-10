@@ -154,8 +154,7 @@ export const backupFile = async (fileId, backupFolderName = "BACKUPS_SISTEMA") =
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const backupName = `BACKUP_${timestamp}_${originalFile.data.name}`;
 
-        // 2. Buscar o crear la carpeta de Backups (usando tu helper de caché)
-        // Usamos el ID de la carpeta raíz de digitalizados o una definida en env
+        // 2. Buscar o crear la carpeta de Backups
         const rootId = process.env.ID_CARPETA_ORIGEN_BACKUP; 
         const backupFolderId = await getOrCreateFolderPath(rootId, [backupFolderName]);
 

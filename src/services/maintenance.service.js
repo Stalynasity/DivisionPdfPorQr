@@ -1,5 +1,5 @@
 import nodeCron from "node-cron";
-import { setMaintenanceRedis, cleanOldRows } from "./excel.service.js"; 
+import { setMaintenanceRedis, cleanOldRows, cleanAppDriveExcels } from "./excel.service.js"; 
 import { splitQueue } from "../jobs/queue.js";
 import { backupFile } from "./drive.service.js";
 
@@ -43,6 +43,10 @@ export const initMaintenanceScheduler = () => {
             // 4. LIMPIEZA: Ejecutar el borrado de filas antiguas (>21 días)
             console.log("[MANTENIMIENTO] Iniciando limpieza de registros antiguos en Excel...");
             await cleanOldRows();
+
+            // 5. NUEVO: Limpieza de Excels de archivos_drive (APP1, APP2, APP3)
+            console.log("[MANTENIMIENTO] Iniciando limpieza de Excels de Apps...");
+            await cleanAppDriveExcels();
 
         } catch (err) {
             // Si algo falla (Drive, Redis o Excel), lo capturamos aquí
