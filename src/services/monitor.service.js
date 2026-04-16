@@ -44,7 +44,7 @@ export const watchInputFolder = async () => {
     const isMaintenance = await getMaintenanceRedis();
 
     if (isMaintenance) {
-        console.log("... [!] Sistema en PAUSA por mantenimiento mensual (Redis) ...");
+        console.log("... [!] Sistema en PAUSA por mantenimiento semanal domingo - 5pm (Redis) ...");
         return;
     }
 
@@ -175,12 +175,5 @@ async function handleLocalError(localPath, fileName, motivo) {
     } catch (e) {
         console.error(`CRITICAL_ERROR_HANDLER_FAIL: No se pudo subir/borrar el archivo de error. Detalles: ${e.message}`);
         if (e.stack) console.error(e.stack);
-        
-        try {
-            await fs.remove(localPath);
-            console.log(`INFO: Se forzó el borrado local de ${fileName} tras fallo de subida.`);
-        } catch (removeErr) {
-            console.error(`FATAL: Tampoco se pudo borrar el archivo local: ${removeErr.message}`);
-        }
     }
 }

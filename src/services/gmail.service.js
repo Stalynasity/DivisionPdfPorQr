@@ -31,7 +31,6 @@ export const descargaPDFEmail = async () => {
 
         const res = await gmail.users.messages.list({
             userId: 'me',
-            // Eliminamos la palabra "alternativa" para que sea más general
             q: `subject:("[IDX] INDEXACION_AUTOMATICA_APP -") is:unread -label:${NOMBRE_ETIQUETA}`
         });
 
@@ -40,6 +39,14 @@ export const descargaPDFEmail = async () => {
 
         for (const msgInfo of messages) {
             const msg = await gmail.users.messages.get({ userId: 'me', id: msgInfo.id });
+            
+            // --- NUEVA LÓGICA: EXTRAER USUARIO DEL CORREO ---
+            const cabeceraFrom = msg.data.payload.headers.find(h => h.name === 'From')?.value || '';
+            // La expresión regular busca cualquier texto válido de email justo antes del '@'
+            const coincidencia = cabeceraFrom.match(/([a-zA-Z0-9._-]+)@/);
+            const prefijoUsuario = coincidencia ? coincidencia[1] : 'usuario_desconocido';
+            // ------------------------------------------------
+
             const todasLasPartes = msg.data.payload.parts ? buscarPdfsEnPartes(msg.data.payload.parts) : [];
 
             if (todasLasPartes.length === 0) {
@@ -62,9 +69,8 @@ export const descargaPDFEmail = async () => {
 
                     const fileBuffer = Buffer.from(attach.data.data, 'base64url');
 
-                    // Definimos la ruta completa del archivo
-                    // Agregamos un timestamp al nombre para evitar sobrescribir archivos con el mismo nombre
-                    const fileName = `${Date.now()}_${part.filename}`;
+                    // --- CAMBIO DE NOMBRE DEL ARCHIVO ---
+                    const fileName = `${prefijoUsuario}-${Date.now()}_${part.filename}`;
                     const filePath = path.join(CARPETA_LOCAL_DESTINO, fileName);
 
                     // Guardado local
@@ -83,7 +89,7 @@ export const descargaPDFEmail = async () => {
                 console.log(`INFO: SUCCESS - Mensaje ${msgInfo.id} finalizado.`);
             } else {
                 console.warn(`WARN: GMAIL - Mensaje ${msgInfo.id} con error de guardado/corrupción. Notificando...`);
-                await enviarRespuestaError(gmail, msg.data); // <-- NUEVO: Envía correo de error
+                await enviarRespuestaError(gmail, msg.data);
                 await marcarComoProcesado(gmail, msgInfo.id, ETIQUETA_SIN_PDF);
             }
         }

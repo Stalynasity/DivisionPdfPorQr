@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { watchInputFolder } from "./services/monitor.service.js";
 import { startBatchFlushCycle } from "./services/batch.service.js";
 import { initMaintenanceScheduler } from "./services/maintenance.service.js";
+import { getOAuthClient } from "./services/auth.oauth.js";
 
 dotenv.config({ path: "./.env" });
 
@@ -11,8 +12,18 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3010;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`API PDF Split inicializada en puerto ${PORT}`);
+
+    // --- NUEVA VALIDACIÓN EN EL ARRANQUE ---
+    console.log("INFO: Verificando credenciales de Google...");
+    try {
+        // Ejecutamos la validación. Si el token caducó, la consola se pausará aquí 
+        await getOAuthClient();
+    } catch (err) {
+        console.error("CRITICAL: Falló la autorización de Google. Deteniendo servidor.");
+        process.exit(1); // Apaga la app si no se puede autorizar
+    }
 
     // 1. Iniciar el vaciado de Redis a Excel (Batch)
     startBatchFlushCycle();
@@ -30,11 +41,9 @@ app.listen(PORT, () => {
             console.error(` MOTIVO: ${error.message}`);
             
             if (error.stack) {
-                console.error(`DETALLE: ${error.stack.split('\n')[1]}`); // Muestra la línea del error
+                console.error(`DETALLE: ${error.stack.split('\n')[1]}`);
             }
         } finally {
-            // Importante: No bajar de 4000ms para no saturar las APIs de Google
-            // El uso de setTimeout asegura que el siguiente ciclo solo empiece DESPUÉS de que termine el actual
             setTimeout(startMonitoring, 4000);
         }
     };
