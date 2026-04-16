@@ -73,7 +73,6 @@ export const getOAuthClient = async () => {
             
             // Validar si el token es funcional
             await oAuth2Client.getAccessToken();
-            console.log("INFO: AUTH_SUCCESS - Conexión con Google establecida.");
             return oAuth2Client;
         } catch (err) {
             console.warn(`WARN: AUTH_TOKEN_INVALID - Reintentando autorización... (${err.message})`);
