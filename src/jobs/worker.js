@@ -18,13 +18,15 @@ const handleFatalError = async (filePath, fileName, errorMsg) => {
     try {
         if (await fs.pathExists(filePath)) {
             const fileBuffer = await fs.readFile(filePath);
-            await uploadFileToDrive(fileBuffer, fileName, SYSTEM_FOLDERS.ERRORES);
-            await fs.remove(filePath);
+            await uploadFileToDrive(fileBuffer, `ERROR_${fileName}`, SYSTEM_FOLDERS.ERRORES);
+            // await fs.remove(filePath); 
+            console.log(`[RECOVERY] Archivo conservado en local por fallo crítico: ${fileName}`);
         }
     } catch (e) {
-        console.error(`[FATAL] RECOVERY_FAILED - No se pudo mover a Drive Errores: ${e.message}`);
+        console.error(`[FATAL] RECOVERY_FAILED - Error al respaldar en Drive: ${e.message}`);
     }
 };
+
 
 const saveLocalMetadata = async (idSofex, jobId, fileName, resultMetadata, excelMetadata) => {
     const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
@@ -87,11 +89,20 @@ const processor = async (job) => {
         const resultMetadata = await processPdfSplit(filePath, job.id, targetDriveFolderId, excelMetadata);
 
         // C. Guardar JSON
-        const ID_caratula_sofex = `CAR_${excelMetadata.ID_Caratula.split('_').pop()}_${job.id}`;
+        const caratulaSufijo = String(excelMetadata.ID_Caratula).split('_').pop() || 'DESCFECHANULL';
+        const ID_caratula_sofex = `CAR_${caratulaSufijo}_${job.id}`;
         const jsonPath = await saveLocalMetadata(ID_caratula_sofex, job.id, fileName, resultMetadata, excelMetadata);
+        
+        const inicialesuse = excelMetadata.Usuario
+            .split('.')              
+            .map(p => p.charAt(0))
+            .join('')                
+            .toUpperCase();
+
+        const idsoft = `CAR_${inicialesuse}${caratulaSufijo}-${excelMetadata.No_Identificacion}` || 'IDCARATULANULL';
 
         // D. Éxito: Encolar estado (0 Consumo API)
-        await enqueueStatusUpdate(excelMetadata.rowNumber, `PROCESO FINALIZADO | ID_SOF: ${ID_caratula_sofex}`);
+        await enqueueStatusUpdate(excelMetadata.rowNumber, `PROCESO FINALIZADO | ID_SOF: ${idsoft}`);
         await fs.remove(filePath);
         
         console.log(`[SUCCESS] WORKER_SUCCESS - ${logId}`);

@@ -95,7 +95,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         // Tarea de respaldo: Usamos el buffer original directamente (más rápido)
         const backupTask = (async () => {
             const nombreCompleto = `GEN_${excelMetadata.ID_Caratula}_${jobId}.pdf`;
-            
+
             // 1. Esto se queda igual: Se sube el archivo real a Drive al instante
             const url = await uploadFileToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
 
@@ -105,31 +105,52 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                 "Pdf_Completo",
                 "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
             );
-            
+
             return { categoria: "PDF_COMPLETO", url };
         })();
-        
+
         // Tareas de segmentos: Con límite de 5 para proteger el ancho de banda
         const uploadLimit = pLimit(5);
         const segmentTasks = bloques.map((bloque) => uploadLimit(async () => {
             try {
-                // Obtenemos solo los índices de las páginas que NO son separadores
                 const indices = bloque.indices || bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
                 if (indices.length === 0) return null;
 
                 const nuevoPdf = await PDFDocument.create();
-                const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
-                copiedPages.forEach(p => nuevoPdf.addPage(p));
 
-                // useObjectStreams: false para compatibilidad y velocidad
-                const bytes = await nuevoPdf.save({ useObjectStreams: false });
-                const nombreSegmento = `${bloque.codigo || bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
+                // Aseguramos que las páginas se copien correctamente
+                const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
+                for (const page of copiedPages) {
+                    nuevoPdf.addPage(page);
+                }
+
+                // CORRECCIÓN: Sanitización de caracteres para evitar errores de ruta (ENOENT)
+                // Esto cambia "Cheque/Gerencia" por "Cheque-Gerencia"
+                const idSeguro = String(excelMetadata.ID_Caratula).replace(/[\/\\?%*:|"<>]/g, "-");
+                const codigoSeguro = String(bloque.codigo || bloque.codigoCategoria).replace(/[\/\\?%*:|"<>]/g, "-");
+
+                const nombreSegmento = `${codigoSeguro}_${idSeguro}.pdf`;
+
+                // Usamos una configuración de guardado más conservadora
+                const bytes = await nuevoPdf.save({
+                    useObjectStreams: false,
+                    addDefaultFont: false
+                });
+
                 const url = await uploadFileToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
 
                 return { categoria: bloque.codigo || bloque.codigoCategoria, url, nombre: nombreSegmento };
             } catch (e) {
-                console.error(`${logId} Error en segmento ${bloque.codigo}: ${e.message}`);
-                return null;
+                // Si falla un segmento, lo logueamos pero no matamos todo el proceso
+                console.error(`[ERROR_SEGMENTO] ${logId} | Segmento: ${bloque.codigo} | Msg: ${e.message}`);
+
+                // Si el error es de red, sí lanzamos para reintentar el ticket completo
+                const errMsg = e.message.toLowerCase();
+                if (errMsg.includes('getaddrinfo') || errMsg.includes('timeout') || errMsg.includes('econnreset')) {
+                    throw new Error(`REINTENTO_POR_RED: ${e.message}`);
+                }
+
+                return null; // Otros errores omiten el segmento
             }
         }));
 

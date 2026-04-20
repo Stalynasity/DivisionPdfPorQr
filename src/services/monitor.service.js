@@ -66,25 +66,24 @@ export const watchInputFolder = async () => {
             if (!isStable) {
                 // No hacemos ruido, solo lo omitimos. En 4 segundos el monitor volverá a intentarlo.
                 console.log(`[INFO] Archivo copiándose o bloqueado: ${currentFileName}. Esperando...`);
-                continue; 
+                continue;
             }
 
             let tempImgDir = null;
 
             // Renombrado (solo se ejecuta si el archivo ya está estable)
-            if (currentFileName.length > 100) {
-                const ext = path.extname(currentFileName);
-                const base = path.basename(currentFileName, ext).substring(0, 50);
-                const newFileName = `${base}_${Date.now()}${ext}`;
-                const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
+            const ext = path.extname(currentFileName);
+            const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
+            const base = path.basename(currentFileName, ext).substring(0, 50);
+            const newFileName = `${base}_${Date.now()}_${randomStr}${ext}`;
+            const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
 
-                try {
-                    await fs.rename(localPath, newPath);
-                    currentFileName = newFileName;
-                    localPath = newPath;
-                } catch (renameErr) {
-                    console.error(`No se pudo renombrar: ${renameErr.message}`);
-                }
+            try {
+                await fs.rename(localPath, newPath);
+                currentFileName = newFileName;
+                localPath = newPath;
+            } catch (renameErr) {
+                console.error(`No se pudo renombrar: ${renameErr.message}`);
             }
 
             console.log(`\n---PROCESANDO: ${currentFileName} ---`);
@@ -129,12 +128,22 @@ export const watchInputFolder = async () => {
                 const finalPath = path.join(RUTA_LOCAL_ENCOLADO, currentFileName);
                 await fs.move(localPath, finalPath, { overwrite: true });
 
+                // --- AQUÍ AGREGAMOS LA CONFIGURACIÓN DE REINTENTOS ---
                 const job = await splitQueue.add("split", {
                     filePath: finalPath,
                     fileName: currentFileName,
                     idCaratula: idLimpio,
                     excelMetadata: excelMetadata
-                });
+                },
+                    {
+                        attempts: 3, // 3 intentos en total si falla
+                        backoff: {
+                            type: 'exponential',
+                            delay: 40000
+                        },
+                        removeOnComplete: true, // Limpia la memoria de Redis cuando termina con éxito
+                        removeOnFail: false // Si falla 3 veces, lo deja en Redis para que lo revises
+                    });
 
                 console.log(`EXITO: Ticket ${job.id} generado.`);
 
@@ -155,7 +164,7 @@ export const watchInputFolder = async () => {
 
 async function handleLocalError(localPath, fileName, motivo) {
     console.error(`INFO: ERROR_HANDLER - Iniciando proceso de error para ${fileName}. Motivo: ${motivo}`);
-    
+
     try {
         if (!(await fs.pathExists(localPath))) {
             console.error(`ERROR_HANDLER_ABORTED: El archivo ${localPath} ya no existe en el disco.`);
