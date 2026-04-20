@@ -94,7 +94,8 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
 
         // Tarea de respaldo: Usamos el buffer original directamente (más rápido)
         const backupTask = (async () => {
-            const nombreCompleto = `GEN_${excelMetadata.ID_Caratula}_${jobId}.pdf`;
+            const nameSeguroGen = String(excelMetadata.ID_Caratula).replace(/[\/\\?%*:|"<>]/g, "-");
+            const nombreCompleto = `GEN_${nameSeguroGen}_${jobId}.pdf`;
 
             // 1. Esto se queda igual: Se sube el archivo real a Drive al instante
             const url = await uploadFileToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
