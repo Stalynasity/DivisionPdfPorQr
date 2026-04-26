@@ -6,7 +6,7 @@ import { uploadFileToDrive } from "./drive.service.js";
 import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
 import pLimit from "p-limit";
 import path from "path";
-import { updateSheetRow, insertDocumentRowsBatch, enqueueDocumentRows, enqueueCellUpdate } from "../services/excel.service.js";
+import { updateSheetRow, enqueueStatusUpdate, enqueueDocumentRows, enqueueCellUpdate } from "../services/excel.service.js";
 
 /**
  * Procesa la división de un PDF local basándose en separadores QR.
@@ -44,15 +44,22 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         // --- LECTURA QR (PARALELA) ---
         const limit = pLimit(4); // Máximo 4 procesos de OCR simultáneos
         const qrResults = await Promise.all(
-            files.slice(1).map(file => limit(async () => {
+            // ELIMINAMOS .slice(1) para incluir la página 1 (índice 0)
+            files.map(file => limit(async () => {
                 const imgPath = path.join(tmpDir, file);
-                // Extrae el número de página del nombre del archivo (ej: page-1.png -> 0)
+
+                // Extrae el número de página del nombre del archivo (ej: page-1.png -> 1)
                 const match = file.match(/\d+/);
                 const pageIdx = match ? parseInt(match[0]) - 1 : 0;
+
                 let qrData = null;
                 try {
                     qrData = await readQR(imgPath);
-                    if (qrData) qrData = qrData.replace(/^"+|"+$/g, "").trim();
+                    if (qrData) {
+                        qrData = qrData.replace(/^"+|"+$/g, "").trim();
+                        // Este log te confirmará que ahora sí lee la Página 1
+                        console.log(`Página ${pageIdx + 1}: QR Detectado -> ${qrData}`);
+                    }
                 } catch (err) {
                     console.warn(`WARN: QR_READ_FAIL - ${logId} | Page: ${pageIdx + 1} | Msg: ${err.message}`);
                 }
@@ -60,7 +67,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             }))
         );
 
-        // --- 4. SEGMENTACIÓN POR BLOQUES ---
+        // --- SEGMENTACIÓN POR BLOQUES ---
         const bloques = [];
         let bloqueActual = { codigo: null, indices: [] };
 
@@ -78,6 +85,7 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                 bloqueActual.indices.push(item.pageIdx);
             }
         }
+
         if (bloqueActual.codigo && bloqueActual.indices.length > 0) bloques.push(bloqueActual);
 
         // Agregar el último bloque detectado
@@ -87,7 +95,17 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                 codigoCategoria: codigoActual || "DESCONOCIDO"
             });
         }
-        // --- 4. GENERACIÓN Y CARGA PARALELIZADA ---
+
+        if (bloques.length === 0) {
+            // Si no hay bloques, significa que no se detectaron separadores QR válidos
+            const errorMsg = "DOCUMENTO_SIN_CATEGORIAS: No se detectaron separadores QR (SEP|...) válidos en el archivo.";
+            console.warn(`[WARN] ${logId} | ${errorMsg}`);
+
+            // Lanzamos un error específico que el processor pueda identificar
+            throw new Error("NO_CATEGORIES_FOUND");
+        }
+
+        // --- GENERACIÓN Y CARGA PARALELIZADA ---
         const pdfData = await fs.readFile(pdfPath);
         const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
 
@@ -110,8 +128,8 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
             return { categoria: "PDF_COMPLETO", url };
         })();
 
-        // Tareas de segmentos: Con límite de 5 para proteger el ancho de banda
-        const uploadLimit = pLimit(5);
+        // Tareas de segmentos: Con límite de 2 para proteger el ancho de banda
+        const uploadLimit = pLimit(2);
         const segmentTasks = bloques.map((bloque) => uploadLimit(async () => {
             try {
                 const indices = bloque.indices || bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);

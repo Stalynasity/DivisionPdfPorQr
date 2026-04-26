@@ -32,8 +32,11 @@ export const readQR = async (imagePath) => {
         }
 
         const results = await readBarcodes(fs.readFileSync(imagePath), {
-            tryHarder: true,
-            formats: ["QRCode"]
+            // tryHarder: true,
+            tryInvert: true,
+            formats: ["QRCode"],
+            isPure: false,
+            // binarizer: "GlobalHistogram"
         });
 
         if (results?.length > 0) {

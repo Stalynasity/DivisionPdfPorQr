@@ -31,17 +31,17 @@ const handleFatalError = async (filePath, fileName, errorMsg) => {
 const saveLocalMetadata = async (idSofex, jobId, fileName, resultMetadata, excelMetadata) => {
     const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
     await fs.ensureDir(metadataDir);
-    
+
     const safeName = idSofex.replace(/[^a-z0-9]/gi, '-');
     const jsonPath = path.join(metadataDir, `meta_${safeName}.json`);
-    
+
     await fs.writeJson(jsonPath, {
         jobId,
         originalFileName: fileName,
         resultMetadata,
         clienteData: excelMetadata
     }, { spaces: 2 });
-    
+
     return jsonPath;
 };
 
@@ -92,11 +92,11 @@ const processor = async (job) => {
         const caratulaSufijo = String(excelMetadata.ID_Caratula).split('_').pop() || 'DESCFECHANULL';
         const ID_caratula_sofex = `CAR_${caratulaSufijo}_${job.id}`;
         const jsonPath = await saveLocalMetadata(ID_caratula_sofex, job.id, fileName, resultMetadata, excelMetadata);
-        
+
         const inicialesuse = excelMetadata.Usuario
-            .split('.')              
+            .split('.')
             .map(p => p.charAt(0))
-            .join('')                
+            .join('')
             .toUpperCase();
 
         const idsoft = `CAR_${inicialesuse}${caratulaSufijo}-${excelMetadata.No_Identificacion}` || 'IDCARATULANULL';
@@ -104,21 +104,34 @@ const processor = async (job) => {
         // D. Éxito: Encolar estado (0 Consumo API)
         await enqueueStatusUpdate(excelMetadata.rowNumber, `PROCESO FINALIZADO | ID_SOF: ${idsoft}`);
         await fs.remove(filePath);
-        
+
         console.log(`[SUCCESS] WORKER_SUCCESS - ${logId}`);
         return { status: 'success', path: jsonPath };
 
     } catch (err) {
         console.error(`[ERROR] WORKER_FAILED - ${logId} | Intento ${job.attemptsMade + 1}/${maxRetries} | Msg: ${err.message}`);
 
+        if (err.message === "NO_CATEGORIES_FOUND") {
+            console.error(`[REJECTED] ${logId} | El PDF no tiene estructura válida.`);
+            // 1. Notificar al usuario vía Excel/AppSheet
+            await enqueueStatusUpdate(excelMetadata.rowNumber, "ERROR: PDF sin separadores QR válidos.");
+            // 2. Enviar a Drive Errores para inspección manual
+            await handleFatalError(filePath, fileName, "SIN_CATEGORIAS_QR");
+            return { status: 'failed_no_categories' };
+        }
+
+        // Caso B: Errores de Red / Socket Hang Up
+        // Si detectamos que el socket se colgó, forzamos el reintento
         if (isFinalAttempt) {
             console.log(`[CRITICAL] Intento final fallido para ${logId}.`);
             await handleFatalError(filePath, fileName, err.message);
-            await enqueueStatusUpdate(excelMetadata.rowNumber, `Error Definitivo: ${err.message.substring(0, 100)}`);
+            await enqueueStatusUpdate(excelMetadata.rowNumber, `Error Definitivo (Red/Drive): ${err.message.substring(0, 100)}`);
         } else {
-            await enqueueStatusUpdate(excelMetadata.rowNumber, `Reintentando (${job.attemptsMade + 1}/${maxRetries}). Error: ${err.message.substring(0, 50)}`);
+            // Notificamos que se va a reintentar por un problema de conexión
+            const motivo = errMsg.includes("hang up") ? "Conexión saturada" : "Error de red";
+            await enqueueStatusUpdate(excelMetadata.rowNumber, `Reintentando (${motivo}) ${job.attemptsMade + 1}/${maxRetries}...`);
         }
-        
+
         throw err;
     }
 };
@@ -128,7 +141,7 @@ const processor = async (job) => {
 // ========================================================
 const worker = new Worker("splitQueue", processor, {
     connection,
-    concurrency: 3,
+    concurrency: 2,
     lockDuration: 900000,
     removeOnComplete: { count: 700 },
     removeOnFail: { count: 100 }

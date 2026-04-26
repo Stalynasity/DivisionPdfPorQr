@@ -23,20 +23,32 @@ export const setMaintenanceMode = (value) => {
  */
 const isFileStable = async (filePath) => {
     try {
+        // 1. Verificación de tamaño inicial
         const stat1 = await fs.stat(filePath);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Esperamos medio segundo
+        
+        // Si el archivo está vacío, no lo procesamos aún (podría estar creándose)
+        if (stat1.size === 0) return false;
+
+        // 2. Espera de seguridad (2 segundos para archivos grandes)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // 3. Verificación de tamaño final
         const stat2 = await fs.stat(filePath);
 
-        // Si el tamaño sigue creciendo o está vacío (0 bytes), no está listo
-        if (stat1.size !== stat2.size || stat2.size === 0) {
-            return false;
-        }
+        // Si el tamaño cambió, el archivo se sigue escribiendo
+        if (stat1.size !== stat2.size) return false;
+
+        // En Windows/Linux, si el escáner está escribiendo, esto lanzará un error EACCES/EBUSY
         const fd = await fs.open(filePath, 'r+');
+        
+        // Si logramos abrirlo, lo cerramos inmediatamente
         await fs.close(fd);
 
-        return true; // El archivo está estable y libre
+        return true; 
     } catch (error) {
-        return false; // Está bloqueado, devolvemos falso
+        // Si entra aquí, es que el archivo está bloqueado (EBUSY o EACCES)
+        // No lanzamos error, solo retornamos false para que el monitor lo ignore en este ciclo
+        return false; 
     }
 };
 

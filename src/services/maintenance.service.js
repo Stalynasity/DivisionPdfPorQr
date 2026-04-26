@@ -1,7 +1,10 @@
 import nodeCron from "node-cron";
 import { setMaintenanceRedis, cleanOldRows, cleanAppDriveExcels } from "./excel.service.js"; 
 import { splitQueue } from "../jobs/queue.js";
-import { backupFile } from "./drive.service.js";
+import { backupFile, deepCleanupDrive } from "./drive.service.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export const initMaintenanceScheduler = () => {
     console.log("--- Scheduler de Mantenimiento Semanal Inicializado (Domingos 5:00 PM) ---");
@@ -47,6 +50,17 @@ export const initMaintenanceScheduler = () => {
             // 5. NUEVO: Limpieza de Excels de archivos_drive (APP1, APP2, APP3)
             console.log("[MANTENIMIENTO] Iniciando limpieza de Excels de Apps...");
             await cleanAppDriveExcels();
+
+            console.log("[MANTENIMIENTO] Iniciando limpieza profunda de archivos en Drive (>30 días)...");
+            const carpetasParaLimpiar = [
+                process.env.CARPETA_CARATULAS_PDF_1, // Caratulas_PDF
+                process.env.CARPETA_CARATULAS_PDF_2, 
+                process.env.CARPETA_CARATULAS_PDF_3,
+                process.env.CARPETA_CARATULAS_PDF_4
+            ];
+            const statsDrive = await deepCleanupDrive(carpetasParaLimpiar, 30);
+            
+            console.log(`[MANTENIMIENTO] Drive Limpio: ${statsDrive.archivosBorrados} archivos y ${statsDrive.carpetasBorradas} carpetas eliminadas.`);
 
         } catch (err) {
             // Si algo falla (Drive, Redis o Excel), lo capturamos aquí
