@@ -9,7 +9,7 @@ dotenv.config();
 export const initMaintenanceScheduler = () => {
     console.log("--- Scheduler de Mantenimiento Semanal Inicializado (Domingos 5:00 PM) ---");
 
-    // Cron corregido: 0 (minuto), 17 (hora 5 PM), * (día), * (mes), 0 (domingo)
+    //0 (minuto), 17 (hora 5 PM), * (día), * (mes), 0 (domingo)
     nodeCron.schedule("0 17 * * 0", async () => {
         
         try {

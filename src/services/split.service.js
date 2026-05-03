@@ -44,22 +44,17 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
         // --- LECTURA QR (PARALELA) ---
         const limit = pLimit(4); // Máximo 4 procesos de OCR simultáneos
         const qrResults = await Promise.all(
-            // ELIMINAMOS .slice(1) para incluir la página 1 (índice 0)
-            files.map(file => limit(async () => {
-                const imgPath = path.join(tmpDir, file);
 
-                // Extrae el número de página del nombre del archivo (ej: page-1.png -> 1)
+            files.slice(1).map(file => limit(async () => {
+                const imgPath = path.join(tmpDir, file);
+                // Extrae el número de página del nombre del archivo (ej: page-1.png -> 0)
                 const match = file.match(/\d+/);
                 const pageIdx = match ? parseInt(match[0]) - 1 : 0;
-
                 let qrData = null;
                 try {
                     qrData = await readQR(imgPath);
-                    if (qrData) {
-                        qrData = qrData.replace(/^"+|"+$/g, "").trim();
-                        // Este log te confirmará que ahora sí lee la Página 1
-                        console.log(`Página ${pageIdx + 1}: QR Detectado -> ${qrData}`);
-                    }
+                    if (qrData) qrData = qrData.replace(/^"+|"+$/g, "").trim();
+                    console.log(`Página ${pageIdx + 1}: QR Detectado -> ${qrData}`);
                 } catch (err) {
                     console.warn(`WARN: QR_READ_FAIL - ${logId} | Page: ${pageIdx + 1} | Msg: ${err.message}`);
                 }
@@ -155,10 +150,11 @@ export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excel
                     useObjectStreams: false,
                     addDefaultFont: false
                 });
+                const pageCount = nuevoPdf.getPageCount();
 
                 const url = await uploadFileToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
 
-                return { categoria: bloque.codigo || bloque.codigoCategoria, url, nombre: nombreSegmento };
+                return { categoria: bloque.codigo || bloque.codigoCategoria, url, nombre: nombreSegmento, pageCount: pageCount };
             } catch (e) {
                 // Si falla un segmento, lo logueamos pero no matamos todo el proceso
                 console.error(`[ERROR_SEGMENTO] ${logId} | Segmento: ${bloque.codigo} | Msg: ${e.message}`);

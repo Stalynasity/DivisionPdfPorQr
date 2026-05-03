@@ -114,7 +114,7 @@ const processor = async (job) => {
         if (err.message === "NO_CATEGORIES_FOUND") {
             console.error(`[REJECTED] ${logId} | El PDF no tiene estructura válida.`);
             // 1. Notificar al usuario vía Excel/AppSheet
-            await enqueueStatusUpdate(excelMetadata.rowNumber, "ERROR: PDF sin separadores QR válidos.");
+            await enqueueStatusUpdate(excelMetadata.rowNumber, "PDF sin separadores válidos");
             // 2. Enviar a Drive Errores para inspección manual
             await handleFatalError(filePath, fileName, "SIN_CATEGORIAS_QR");
             return { status: 'failed_no_categories' };
