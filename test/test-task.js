@@ -36,18 +36,18 @@ async function runFullMaintenanceSimulation() {
         console.log("✅ Drenado completado o bajo control.");
 
         // --- PASO 3: BACKUP ---
-        // console.log("\nStep 3: Ejecutando Backup del Excel Maestro en Drive...");
-        // const backupId = await backupFile(process.env.EXCEL_DIGITALIZACION);
-        // console.log(`✅ Backup generado con éxito. ID: ${backupId}`);
+        console.log("\nStep 3: Ejecutando Backup del Excel Maestro en Drive...");
+        const backupId = await backupFile(process.env.EXCEL_DIGITALIZACION);
+        console.log(`✅ Backup generado con éxito. ID: ${backupId}`);
 
         // // --- PASO 4: LIMPIEZA EXCEL ---
-        // console.log("\nStep 4: Limpieza de filas antiguas en Excel Maestro (>21 días)...");
-        // await cleanOldRows();
-        // console.log("✅ Limpieza de registros maestros finalizada.");
+        console.log("\nStep 4: Limpieza de filas antiguas en Excel Maestro (>21 días)...");
+        await cleanOldRows();
+        console.log("✅ Limpieza de registros maestros finalizada.");
 
         // console.log("\nStep 5: Limpieza de Excels secundarios (Apps)...");
-        // await cleanAppDriveExcels();
-        // console.log("✅ Excels de apps saneados.");
+        await cleanAppDriveExcels();
+        console.log("✅ Excels de apps saneados.");
 
         // --- PASO 6: DRIVE DEEP CLEANUP ---
         console.log("\nStep 6: Ejecutando limpieza profunda de carpetas Drive (>21 días)...");

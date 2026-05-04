@@ -51,14 +51,20 @@ export const initMaintenanceScheduler = () => {
             console.log("[MANTENIMIENTO] Iniciando limpieza de Excels de Apps...");
             await cleanAppDriveExcels();
 
-            console.log("[MANTENIMIENTO] Iniciando limpieza profunda de archivos en Drive (>30 días)...");
-            const carpetasParaLimpiar = [
-                process.env.CARPETA_CARATULAS_PDF_1, // Caratulas_PDF
+            console.log("[MANTENIMIENTO] Iniciando limpieza de caratulas en Drive (>21 días)...");
+            const carpetasParaLimpiarCaratula = [
+                process.env.CARPETA_CARATULAS_PDF_1,
                 process.env.CARPETA_CARATULAS_PDF_2, 
                 process.env.CARPETA_CARATULAS_PDF_3,
                 process.env.CARPETA_CARATULAS_PDF_4
             ];
-            const statsDrive = await deepCleanupDrive(carpetasParaLimpiar, 30);
+            const statsDrive = await deepCleanupDrive(carpetasParaLimpiarCaratula, 21);
+            
+            console.log("[MANTENIMIENTO] Iniciando limpieza de pdf completos en Drive (>30 días)...");
+            const carpetasParaLimpiarPDFcompleto = [
+                process.env.DOCUMENTOS_COMPLETOS_PROCESADOS_FOLDER_ID,
+            ];
+            const statsDrive = await deepCleanupDrive(carpetasParaLimpiarPDFcompleto, 30);
             
             console.log(`[MANTENIMIENTO] Drive Limpio: ${statsDrive.archivosBorrados} archivos y ${statsDrive.carpetasBorradas} carpetas eliminadas.`);
 
