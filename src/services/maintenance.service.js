@@ -64,9 +64,10 @@ export const initMaintenanceScheduler = () => {
             const carpetasParaLimpiarPDFcompleto = [
                 process.env.DOCUMENTOS_COMPLETOS_PROCESADOS_FOLDER_ID,
             ];
-            const statsDrive = await deepCleanupDrive(carpetasParaLimpiarPDFcompleto, 30);
+            const statsDrive2 = await deepCleanupDrive(carpetasParaLimpiarPDFcompleto, 30);
             
             console.log(`[MANTENIMIENTO] Drive Limpio: ${statsDrive.archivosBorrados} archivos y ${statsDrive.carpetasBorradas} carpetas eliminadas.`);
+            console.log(`[MANTENIMIENTO] Drive Limpio: ${statsDrive2.archivosBorrados} archivos y ${statsDrive2.carpetasBorradas} carpetas eliminadas.`);
 
         } catch (err) {
             // Si algo falla (Drive, Redis o Excel), lo capturamos aquí
