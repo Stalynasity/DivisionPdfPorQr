@@ -58,16 +58,16 @@ export const initMaintenanceScheduler = () => {
                 process.env.CARPETA_CARATULAS_PDF_3,
                 process.env.CARPETA_CARATULAS_PDF_4
             ];
-            const statsDrive = await deepCleanupDrive(carpetasParaLimpiarCaratula, 21);
+            const statsCaratulasDelet = await deepCleanupDrive(carpetasParaLimpiarCaratula, 21);
             
             console.log("[MANTENIMIENTO] Iniciando limpieza de pdf completos en Drive (>30 días)...");
             const carpetasParaLimpiarPDFcompleto = [
                 process.env.DOCUMENTOS_COMPLETOS_PROCESADOS_FOLDER_ID,
             ];
-            const statsDrive2 = await deepCleanupDrive(carpetasParaLimpiarPDFcompleto, 30);
+            const statsGenPDF = await deepCleanupDrive(carpetasParaLimpiarPDFcompleto, 30);
             
-            console.log(`[MANTENIMIENTO] Drive Limpio: ${statsDrive.archivosBorrados} archivos y ${statsDrive.carpetasBorradas} carpetas eliminadas.`);
-            console.log(`[MANTENIMIENTO] Drive Limpio: ${statsDrive2.archivosBorrados} archivos y ${statsDrive2.carpetasBorradas} carpetas eliminadas.`);
+            console.log(`[MANTENIMIENTO] Caratulas de drive Limpia: ${statsCaratulasDelet.archivosBorrados} archivos y ${statsCaratulasDelet.carpetasBorradas} carpetas eliminadas.`);
+            console.log(`[MANTENIMIENTO] PDFs completos Limpio: ${statsGenPDF.archivosBorrados} archivos y ${statsGenPDF.carpetasBorradas} carpetas eliminadas.`);
 
         } catch (err) {
             // Si algo falla (Drive, Redis o Excel), lo capturamos aquí
