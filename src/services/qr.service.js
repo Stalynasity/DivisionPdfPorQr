@@ -47,9 +47,10 @@ export const readQR = async (imagePath) => {
         return null;
 
     } catch (err) {
-        // Manejo de errores de memoria (excPtr/undefined)
-        if (err.message.includes('excPtr') || err.message.includes('undefined')) {
-            console.error("Crash de memoria WASM. Reiniciando motor...");
+        // Manejo de errores de memoria AMPLIADO
+        const errorMsg = err.message.toLowerCase();
+        if (errorMsg.includes('excptr') || errorMsg.includes('undefined') || errorMsg.includes('allocate') || errorMsg.includes('memory')) {
+            console.error("Crash de memoria WASM detectado. Reiniciando motor para la próxima lectura...");
             isPrepared = false;
             try { purgeZXingModule(); } catch (e) {}
         } else {

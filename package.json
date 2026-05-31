@@ -30,7 +30,7 @@
     "p-limit": "^5.0.0",
     "pdf-lib": "^1.17.1",
     "winston": "^3.13.0",
-    "zxing-wasm": "^3.0.1"
+    "zxing-wasm": "3.0.1"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
