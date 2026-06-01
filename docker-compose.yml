@@ -40,6 +40,7 @@ services:
       - ./secrets:/app/secrets # Asegúrate de tener tu llave de Google aquí
       - ./PROCESO_DOC:/app/PROCESO_DOC
       - ./PROCESO_DOC/Entrada:/app/PROCESO_DOC/Entrada
+      - C:/REQUERIMIENTOS/APPSHEET-DIGITALIZACION/DivisionPdfPorQr/PROCESO_DOC/Entrada:/app/PROCESO_DOC/Entrada
       - ./PROCESO_DOC/Encolado:/app/PROCESO_DOC/Encolado
       - ./PROCESO_DOC/metadata:/app/PROCESO_DOC/metadata
 

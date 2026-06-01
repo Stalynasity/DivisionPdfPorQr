@@ -1,6 +1,6 @@
 import { setMaintenanceRedis, cleanOldRows, cleanAppDriveExcels } from "../src/services/excel.service.js"; 
 import { splitQueue } from "../src/jobs/queue.js";
-import { backupFile, deepCleanupDrive } from "../src/services/drive.service.js";
+import { respaldarArchivo, limpiarDriveEnProfundidad } from "../src/services/drive.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -37,7 +37,7 @@ async function runFullMaintenanceSimulation() {
 
         // --- PASO 3: BACKUP ---
         console.log("\nStep 3: Ejecutando Backup del Excel Maestro en Drive...");
-        const backupId = await backupFile(process.env.EXCEL_DIGITALIZACION);
+        const backupId = await respaldarArchivo(process.env.EXCEL_DIGITALIZACION);
         console.log(`✅ Backup generado con éxito. ID: ${backupId}`);
 
         // // --- PASO 4: LIMPIEZA EXCEL ---
@@ -58,7 +58,7 @@ async function runFullMaintenanceSimulation() {
             process.env.CARPETA_CARATULAS_PDF_4
         ].filter(Boolean);
 
-        const statsDrive = await deepCleanupDrive(carpetasParaLimpiar, 21);
+        const statsDrive = await limpiarDriveEnProfundidad(carpetasParaLimpiar, 21);
         console.log(`✅ DRIVE LIMPIO: ${statsDrive.archivosBorrados} archivos y ${statsDrive.carpetasBorradas} carpetas eliminadas.`);
 
     } catch (err) {

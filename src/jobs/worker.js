@@ -1,172 +1,155 @@
+import fs from "fs-extra";
+import path from "path";
 import { Worker } from "bullmq";
 import { connection } from "../config/redis.js";
-import { processPdfSplit } from "../services/split.service.js";
-import { getOrCreateFolderPath, uploadFileToDrive } from "../services/drive.service.js";
+import { dividirPdf } from "../services/split.service.js";
+import { obtenerOCrearRutaCarpeta, subirArchivoDrive } from "../services/drive.service.js";
+import { encolarEstado, estaEnMantenimiento } from "../services/excel.service.js";
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
-import { enqueueStatusUpdate, getMaintenanceRedis } from "../services/excel.service.js";
-import fs from "fs-extra";
 import dotenv from "dotenv";
-import path from "path";
 
 dotenv.config();
 
-// ========================================================
-// 1. FUNCIONES AUXILIARES (Single Responsibility Principle)
-// ========================================================
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const handleFatalError = async (filePath, fileName, errorMsg) => {
+/**
+ * Sube el archivo al Drive de errores para inspección manual.
+ * Best-effort: nunca lanza, la recuperación no debe romper el flujo.
+ */
+const moverADriveErrores = async (rutaArchivo, nombreArchivo) => {
     try {
-        if (await fs.pathExists(filePath)) {
-            const fileBuffer = await fs.readFile(filePath);
-            await uploadFileToDrive(fileBuffer, `ERROR_${fileName}`, SYSTEM_FOLDERS.ERRORES);
-            // await fs.remove(filePath); 
-            console.log(`[RECOVERY] Archivo conservado en local por fallo crítico: ${fileName}`);
-        }
-    } catch (e) {
-        console.error(`[FATAL] RECOVERY_FAILED - Error al respaldar en Drive: ${e.message}`);
+        if (!(await fs.pathExists(rutaArchivo))) return;
+        const buffer = await fs.readFile(rutaArchivo);
+        await subirArchivoDrive(buffer, `ERROR_${nombreArchivo}`, SYSTEM_FOLDERS.ERRORES);
+        console.log(`[WORKER] Respaldado en Drive/ERRORES: ${nombreArchivo}`);
+    } catch (err) {
+        console.error(`[WORKER] Falló el respaldo: ${err.message}`);
     }
 };
 
+const guardarMetadatosLocales = async (idSof, jobId, nombreArchivo, resultado, metadatos) => {
+    const dir      = path.resolve(process.env.Local_metadata ?? "metadata");
+    const nombre   = idSof.replace(/[^a-z0-9]/gi, "-");
+    const rutaJson = path.join(dir, `meta_${nombre}.json`);
 
-const saveLocalMetadata = async (idSofex, jobId, fileName, resultMetadata, excelMetadata) => {
-    const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
-    await fs.ensureDir(metadataDir);
-
-    const safeName = idSofex.replace(/[^a-z0-9]/gi, '-');
-    const jsonPath = path.join(metadataDir, `meta_${safeName}.json`);
-
-    await fs.writeJson(jsonPath, {
-        jobId,
-        originalFileName: fileName,
-        resultMetadata,
-        clienteData: excelMetadata
-    }, { spaces: 2 });
-
-    return jsonPath;
+    await fs.ensureDir(dir);
+    await fs.writeJson(rutaJson, { jobId, originalFileName: nombreArchivo, resultMetadata: resultado, clienteData: metadatos }, { spaces: 2 });
+    return rutaJson;
 };
 
-// ========================================================
-// 2. PROCESADOR PRINCIPAL (Solo Orquestación)
-// ========================================================
+/**
+ * Construye el ID SOF desde los metadatos.
+ * Formato: CAR_<iniciales><sufijo>-<identificacion>
+ */
+const construirIdSof = (metadatos) => {
+    const sufijo    = String(metadatos.ID_Caratula).split("_").pop() ?? "NULL";
+    const iniciales = metadatos.Usuario.split(".").map((p) => p[0]).join("").toUpperCase();
+    return `CAR_${iniciales}${sufijo}-${metadatos.No_Identificacion}`;
+};
 
-const processor = async (job) => {
+// ─── Procesador ───────────────────────────────────────────────────────────────
 
-    const isMaintenance = await getMaintenanceRedis();
-    if (isMaintenance) {
-        // Devolvemos el trabajo a la cola para que se procese cuando acabe el mantenimiento
-        throw new Error("WAIT_MAINTENANCE: El worker intentó procesar pero el sistema entró en mantenimiento.");
+const procesador = async (job) => {
+    if (await estaEnMantenimiento()) {
+        throw new Error("WAIT_MAINTENANCE: sistema en ventana de mantenimiento.");
     }
 
+    const { filePath, fileName, idCaratula, excelMetadata: metadatos } = job.data;
+    const logId           = `TICKET:${job.id} | ID:${idCaratula}`;
+    const maxIntentos     = job.opts.attempts ?? 3;
+    const esIntentoFinal  = job.attemptsMade + 1 >= maxIntentos;
 
-    const { filePath, fileName, idCaratula, excelMetadata } = job.data;
-    const logId = `TICKET:${job.id} | ID:${idCaratula}`;
-    const maxRetries = job.opts.attempts || 3;
-    const isFinalAttempt = (job.attemptsMade + 1) >= maxRetries;
-
-    // FAIL-FAST 1: Disco
     if (!(await fs.pathExists(filePath))) {
-        throw new Error(`FILE_NO_ENCONTRADO_EN_DISCO: ${filePath}`);
+        throw new Error(`ARCHIVO_NO_ENCONTRADO: ${filePath}`);
     }
 
-    // FAIL-FAST 2: Integridad de Datos (No hacemos fetch aquí para ahorrar API)
-    if (!excelMetadata) {
-        console.warn(`[WARN] DATA_MISSING - ${logId} | Metadata no provista por el monitor.`);
-        await handleFatalError(filePath, fileName, "Metadata omitida.");
-        return { status: 'skipped_no_metadata' };
+    if (!metadatos) {
+        console.warn(`[WORKER] Sin metadatos — ${logId}`);
+        await moverADriveErrores(filePath, fileName);
+        return { status: "skipped_no_metadata" };
     }
 
     try {
-        // A. Preparar Drive
-        const rootDigitalizados = process.env.ID_CARPETA_DIGITALIZADOS;
-        const targetDriveFolderId = await getOrCreateFolderPath(rootDigitalizados, [
-            excelMetadata.Usuario || "SIN_USUARIO",
-            excelMetadata.No_Identificacion || "1000000000",
-            excelMetadata.Proceso || "GENERAL"
-        ]);
+        // 1. Resolver carpeta destino en Drive
+        const carpetaDestino = await obtenerOCrearRutaCarpeta(
+            process.env.ID_CARPETA_DIGITALIZADOS,
+            [
+                metadatos.Usuario           ?? "SIN_USUARIO",
+                metadatos.No_Identificacion ?? "1000000000",
+                metadatos.Proceso           ?? "GENERAL",
+            ]
+        );
 
-        // B. Procesar Split
-        console.log(`[INFO] Procesando PDF - ${logId}`);
-        const resultMetadata = await processPdfSplit(filePath, job.id, targetDriveFolderId, excelMetadata);
+        // 2. Dividir el PDF
+        console.log(`[WORKER] Procesando — ${logId}`);
+        const resultado = await dividirPdf(filePath, job.id, carpetaDestino, metadatos);
 
-        // C. Guardar JSON
-        const caratulaSufijo = String(excelMetadata.ID_Caratula).split('_').pop() || 'DESCFECHANULL';
-        const ID_caratula_sofex = `CAR_${caratulaSufijo}_${job.id}`;
-        const jsonPath = await saveLocalMetadata(ID_caratula_sofex, job.id, fileName, resultMetadata, excelMetadata);
+        // 3. Guardar metadatos locales y notificar éxito
+        const idSof    = construirIdSof(metadatos);
+        const rutaJson = await guardarMetadatosLocales(idSof, job.id, fileName, resultado, metadatos);
 
-        const inicialesuse = excelMetadata.Usuario
-            .split('.')
-            .map(p => p.charAt(0))
-            .join('')
-            .toUpperCase();
-
-        const idsoft = `CAR_${inicialesuse}${caratulaSufijo}-${excelMetadata.No_Identificacion}` || 'IDCARATULANULL';
-
-        // D. Éxito: Encolar estado (0 Consumo API)
-        await enqueueStatusUpdate(excelMetadata.rowNumber, `PROCESO FINALIZADO | ID_SOF: ${idsoft}`);
+        await encolarEstado(metadatos.rowNumber, `PROCESO FINALIZADO | ID_SOF: ${idSof}`);
         await fs.remove(filePath);
 
-        console.log(`[SUCCESS] WORKER_SUCCESS - ${logId}`);
-        return { status: 'success', path: jsonPath };
+        console.log(`[WORKER] Éxito — ${logId}`);
+        return { status: "success", path: rutaJson };
 
     } catch (err) {
-        console.error(`[ERROR] WORKER_FAILED - ${logId} | Intento ${job.attemptsMade + 1}/${maxRetries} | Msg: ${err.message}`);
+        const intento = job.attemptsMade + 1;
+        console.error(`[WORKER] Fallo — ${logId} | Intento ${intento}/${maxIntentos}: ${err.message}`);
 
+        // PDF sin separadores QR → no tiene sentido reintentar
         if (err.message === "NO_CATEGORIES_FOUND") {
-            console.error(`[REJECTED] ${logId} | El PDF no tiene estructura válida.`);
-            // 1. Notificar al usuario vía Excel/AppSheet
-            await enqueueStatusUpdate(excelMetadata.rowNumber, "PDF sin separadores válidos");
-            // 2. Enviar a Drive Errores para inspección manual
-            await handleFatalError(filePath, fileName, "SIN_CATEGORIAS_QR");
-            return { status: 'failed_no_categories' };
+            await encolarEstado(metadatos.rowNumber, "PDF sin separadores válidos");
+            await moverADriveErrores(filePath, fileName);
+            return { status: "failed_no_categories" };
         }
 
-        // Caso B: Errores de Red / Socket Hang Up
-        // Si detectamos que el socket se colgó, forzamos el reintento
-        if (isFinalAttempt) {
-            console.log(`[CRITICAL] Intento final fallido para ${logId}.`);
-            await handleFatalError(filePath, fileName, err.message);
-            await enqueueStatusUpdate(excelMetadata.rowNumber, `Error Definitivo (Red/Drive): ${err.message.substring(0, 100)}`);
+        if (esIntentoFinal) {
+            await moverADriveErrores(filePath, fileName);
+            await encolarEstado(metadatos.rowNumber, `Error definitivo: ${err.message.substring(0, 100)}`);
         } else {
-            // Notificamos que se va a reintentar por un problema de conexión
-            const motivo = errMsg.includes("hang up") ? "Conexión saturada" : "Error de red";
-            await enqueueStatusUpdate(excelMetadata.rowNumber, `Reintentando (${motivo}) ${job.attemptsMade + 1}/${maxRetries}...`);
+            const motivo = err.message.includes("hang up") ? "Conexión saturada" : "Error de red";
+            await encolarEstado(metadatos.rowNumber, `Reintentando (${motivo}) ${intento}/${maxIntentos}...`);
         }
 
         throw err;
     }
 };
 
-// ========================================================
-// 3. CONFIGURACIÓN DEL WORKER
-// ========================================================
-const worker = new Worker("splitQueue", processor, {
+// ─── Worker ───────────────────────────────────────────────────────────────────
+
+const worker = new Worker("splitQueue", procesador, {
     connection,
     concurrency: 2,
-    lockDuration: 900000,
+    lockDuration: 900_000,
     removeOnComplete: { count: 700 },
-    removeOnFail: { count: 100 }
+    removeOnFail:     { count: 100 },
 });
 
-worker.on('failed', (job, err) => console.error(`[BULLMQ_FAIL] JOB_TERMINATED - Ticket: ${job?.id} | Failure: ${err.message}`));
-worker.on('error', err => console.error(`[CRITICAL] REDIS_CONNECTION_LOST - ${err.message}`));
+worker.on("failed", (job, err) =>
+    console.error(`[BULLMQ] Job fallido — Ticket: ${job?.id} | ${err.message}`)
+);
+worker.on("error", (err) =>
+    console.error(`[BULLMQ] Error Redis — ${err.message}`)
+);
 
-const gracefulShutdown = async (signal) => {
-    console.log(`\n[SHUTDOWN] Recibida señal ${signal}. Cerrando Worker...`);
+// ─── Apagado limpio ───────────────────────────────────────────────────────────
+
+let apagando = false;
+
+const apagarLimpiamente = async (señal) => {
+    if (apagando) return;
+    apagando = true;
+    console.log(`\n[WORKER] Señal ${señal} — cerrando...`);
     try {
         await worker.close();
-        console.log("[SHUTDOWN] Worker cerrado limpiamente.");
-    } catch (error) {
-        console.error(`[SHUTDOWN] Error: ${error.message}`);
+        console.log("[WORKER] Cerrado limpiamente.");
+    } catch (err) {
+        console.error(`[WORKER] Error al cerrar: ${err.message}`);
     }
     process.exit(0);
 };
 
-let isShuttingDown = false;
-const handleShutdown = (signal) => {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
-    gracefulShutdown(signal);
-};
-
-process.on("SIGTERM", () => handleShutdown("SIGTERM"));
-process.on("SIGINT", () => handleShutdown("SIGINT"));
+process.on("SIGTERM", () => apagarLimpiamente("SIGTERM"));
+process.on("SIGINT",  () => apagarLimpiamente("SIGINT"));

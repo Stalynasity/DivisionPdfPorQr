@@ -1,59 +1,71 @@
 import express from "express";
 import dotenv from "dotenv";
-import { watchInputFolder } from "./services/monitor.service.js";
-import { startBatchFlushCycle } from "./services/batch.service.js";
-import { initMaintenanceScheduler } from "./services/maintenance.service.js";
-import { getOAuthClient } from "./services/auth.oauth.js";
+import { getOAuthClient } from "./services/auth.service.js";
+import { iniciarCiclosBatch } from "./services/batch.service.js";
+import { iniciarSchedulerMantenimiento } from "./services/maintenance.service.js";
+import { descargaPDFEmail } from "./services/gmail.service.js";
+import { vigilarCarpetaEntrada } from "./services/monitor.service.js";
 
-dotenv.config({ path: "./.env" });
+dotenv.config();
 
-const app = express();
+const app  = express();
+const PORT = process.env.PORT ?? 3010;
 app.use(express.json());
 
-const PORT = process.env.PORT || 3010;
+// ─── Arranque ─────────────────────────────────────────────────────────────────
 
 app.listen(PORT, async () => {
-    console.log(`API PDF Split inicializada en puerto ${PORT}`);
+    console.log(`[SERVER] Escuchando en puerto ${PORT}`);
 
-    // --- NUEVA VALIDACIÓN EN EL ARRANQUE ---
-    console.log("INFO: Verificando credenciales de Google...");
+    // 1. Validar credenciales Google — si falla, no tiene sentido arrancar
     try {
-        // Ejecutamos la validación. Si el token caducó, la consola se pausará aquí 
         await getOAuthClient();
+        console.log("[SERVER] Credenciales de Google OK");
     } catch (err) {
-        console.error("CRITICAL: Falló la autorización de Google. Deteniendo servidor.");
-        process.exit(1); // Apaga la app si no se puede autorizar
+        console.error(`[CRITICAL] Autorización Google fallida: ${err.message}`);
+        process.exit(1);
     }
 
-    // 1. Iniciar el vaciado de Redis a Excel (Batch)
-    startBatchFlushCycle();
+    // 2. Batch Redis → Sheets
+    iniciarCiclosBatch();
 
-    // 2. Iniciar el calendario de mantenimiento (Cron)
-    initMaintenanceScheduler();
+    // 3. Cron de mantenimiento semanal
+    iniciarSchedulerMantenimiento();
 
-    const startMonitoring = async () => {
-        const timestamp = new Date().toLocaleString();
-        try {
-            await watchInputFolder();
+    // 4. Polling de Gmail (cada 60 s)
+    ejecutarEnBucle("GMAIL_POLL", descargaPDFEmail, 60_000);
 
-        } catch (error) {
-            console.error(`[${timestamp}] ERROR: MONITOR_FAILED - Excepción en el ciclo de monitoreo`);
-            console.error(` MOTIVO: ${error.message}`);
-            
-            if (error.stack) {
-                console.error(`DETALLE: ${error.stack.split('\n')[1]}`);
-            }
-        } finally {
-            setTimeout(startMonitoring, 4000);
-        }
-    };
-
-    // Iniciar el ciclo por primera vez
-    startMonitoring();
+    // 5. Monitor de carpeta de entrada (cada 4 s)
+    ejecutarEnBucle("MONITOR", vigilarCarpetaEntrada, 4_000);
 });
 
-// Manejo de cierres limpios
-process.on('SIGINT', () => {
-    console.log("\nINFO: Apagando servidor de monitoreo...");
+// ─── Cierre limpio ────────────────────────────────────────────────────────────
+
+process.on("SIGINT", () => {
+    console.log("\n[SERVER] Apagando...");
     process.exit(0);
 });
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+/**
+ * Ejecuta una función en bucle con un intervalo fijo entre cada llamada.
+ * Los errores se loguean pero nunca detienen el ciclo.
+ *
+ * @param {string}   nombre      - Nombre del ciclo para los logs
+ * @param {Function} fn          - Función async a ejecutar
+ * @param {number}   intervaloMs - Milisegundos de espera entre ejecuciones
+ */
+function ejecutarEnBucle(nombre, fn, intervaloMs) {
+    const ciclo = async () => {
+        try {
+            await fn();
+        } catch (err) {
+            console.error(`[${nombre}] Error en ciclo: ${err.message}`);
+        } finally {
+            setTimeout(ciclo, intervaloMs);
+        }
+    };
+    console.log(`[SERVER] ${nombre} iniciado (intervalo: ${intervaloMs / 1000}s)`);
+    ciclo();
+}

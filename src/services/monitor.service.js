@@ -1,200 +1,162 @@
-import { splitQueue } from "../jobs/queue.js";
-import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
-import { uploadFileToDrive } from "./drive.service.js";
-import { renderPdfToImages } from "./render.service.js";
-import { readQR } from "./qr.service.js";
-import { getDataFromExcel, enqueueStatusUpdate, getMaintenanceRedis } from "../services/excel.service.js"; // <--- Importamos enqueueStatusUpdate
 import fs from "fs-extra";
 import path from "path";
-import dotenv from "dotenv";
-dotenv.config();
+import { splitQueue } from "../jobs/queue.js";
+import { SYSTEM_FOLDERS, PATHS } from "../config/tenants.js";
+import { subirArchivoDrive } from "./drive.service.js";
+import { renderizarPdfAImagenes } from "./render.service.js";
+import { leerQR } from "./qr.service.js";
+import { buscarFilaEnMaestro, encolarEstado, estaEnMantenimiento } from "./excel.service.js";
 
-const RUTA_LOCAL_ENTRADA = process.env.PATH_ENTRADA_LOCAL;
-const RUTA_LOCAL_ENCOLADO = process.env.PATH_ENCOLADO_LOCAL;
-let isMaintenanceMode = false;
+const RUTA_ENTRADA  = process.env.PATH_ENTRADA_LOCAL;
+const RUTA_ENCOLADO = process.env.PATH_ENCOLADO_LOCAL;
 
-export const setMaintenanceMode = (value) => {
-    isMaintenanceMode = value;
-    console.log(`[SYSTEM] Modo Mantenimiento: ${value ? 'ACTIVADO' : 'DESACTIVADO'}`);
+const OPCIONES_JOB = {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 40_000 },
+    removeOnComplete: true,
+    removeOnFail: false,
+};
+
+// ─── Helpers privados ─────────────────────────────────────────────────────────
+
+/**
+ * Devuelve true solo cuando el archivo terminó de copiarse al disco.
+ * Compara tamaño antes/después de 2 s y verifica que no esté bloqueado.
+ */
+const archivoEstable = async (rutaArchivo) => {
+    try {
+        const antes = await fs.stat(rutaArchivo);
+        if (antes.size === 0) return false;
+
+        await new Promise((r) => setTimeout(r, 2000));
+
+        const despues = await fs.stat(rutaArchivo);
+        if (antes.size !== despues.size) return false;
+
+        // Si el escáner aún escribe, esto lanza EBUSY/EACCES
+        const fd = await fs.open(rutaArchivo, "r+");
+        await fs.close(fd);
+        return true;
+    } catch {
+        return false;
+    }
 };
 
 /**
- * Valida si un archivo ya terminó de copiarse en el disco duro.
+ * Sube el archivo a la carpeta de errores en Drive y lo elimina del disco.
+ * Nunca lanza — es una operación best-effort.
  */
-const isFileStable = async (filePath) => {
+const moverADriveErrores = async (rutaLocal, nombreArchivo, motivo) => {
+    console.error(`[MONITOR] Error en ${nombreArchivo}: ${motivo}`);
     try {
-        // 1. Verificación de tamaño inicial
-        const stat1 = await fs.stat(filePath);
-        
-        // Si el archivo está vacío, no lo procesamos aún (podría estar creándose)
-        if (stat1.size === 0) return false;
-
-        // 2. Espera de seguridad (2 segundos para archivos grandes)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // 3. Verificación de tamaño final
-        const stat2 = await fs.stat(filePath);
-
-        // Si el tamaño cambió, el archivo se sigue escribiendo
-        if (stat1.size !== stat2.size) return false;
-
-        // En Windows/Linux, si el escáner está escribiendo, esto lanzará un error EACCES/EBUSY
-        const fd = await fs.open(filePath, 'r+');
-        
-        // Si logramos abrirlo, lo cerramos inmediatamente
-        await fs.close(fd);
-
-        return true; 
-    } catch (error) {
-        // Si entra aquí, es que el archivo está bloqueado (EBUSY o EACCES)
-        // No lanzamos error, solo retornamos false para que el monitor lo ignore en este ciclo
-        return false; 
+        if (!(await fs.pathExists(rutaLocal))) return;
+        await subirArchivoDrive(await fs.readFile(rutaLocal), nombreArchivo, SYSTEM_FOLDERS.ERRORES);
+        await fs.remove(rutaLocal);
+    } catch (err) {
+        console.error(`[MONITOR] No se pudo subir el archivo de error: ${err.message}`);
     }
 };
 
-export const watchInputFolder = async () => {
-    const isMaintenance = await getMaintenanceRedis();
+/**
+ * Genera un nombre único: <base>_<timestamp>_<aleatorio>.pdf
+ * Evita colisiones si llegan dos PDFs con el mismo nombre.
+ */
+const generarNombreUnico = (nombreArchivo) => {
+    const ext      = path.extname(nombreArchivo);
+    const base     = path.basename(nombreArchivo, ext).substring(0, 50);
+    const aleatorio = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `${base}_${Date.now()}_${aleatorio}${ext}`;
+};
 
-    if (isMaintenance) {
-        console.log("... [!] Sistema en PAUSA por mantenimiento semanal domingo - 5pm (Redis) ...");
+// ─── Procesamiento de un PDF ──────────────────────────────────────────────────
+
+const procesarPdf = async (nombreArchivo) => {
+    let rutaLocal  = path.join(RUTA_ENTRADA, nombreArchivo);
+    let dirImgTemp = null;
+
+    if (!(await archivoEstable(rutaLocal))) {
+        console.log(`[MONITOR] Archivo aún copiándose: ${nombreArchivo}`);
         return;
     }
 
+    // Renombrar para evitar colisiones
+    const nombreUnico = generarNombreUnico(nombreArchivo);
+    const rutaUnica   = path.join(RUTA_ENTRADA, nombreUnico);
     try {
-        await fs.ensureDir(RUTA_LOCAL_ENTRADA);
-        await fs.ensureDir(RUTA_LOCAL_ENCOLADO);
-
-        const files = await fs.readdir(RUTA_LOCAL_ENTRADA);
-        const pdfFiles = files.filter(f => f.toLowerCase().endsWith('.pdf'));
-
-        if (pdfFiles.length === 0) return;
-
-        for (const fileName of pdfFiles) {
-            let localPath = path.join(RUTA_LOCAL_ENTRADA, fileName); // Cambiado a 'let' para poder reasignar
-            let currentFileName = fileName;
-
-            // --- NUEVA VALIDACIÓN DE ESTABILIDAD ---
-            const isStable = await isFileStable(localPath);
-            if (!isStable) {
-                // No hacemos ruido, solo lo omitimos. En 4 segundos el monitor volverá a intentarlo.
-                console.log(`[INFO] Archivo copiándose o bloqueado: ${currentFileName}. Esperando...`);
-                continue;
-            }
-
-            let tempImgDir = null;
-
-            // Renombrado (solo se ejecuta si el archivo ya está estable)
-            const ext = path.extname(currentFileName);
-            const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
-            const base = path.basename(currentFileName, ext).substring(0, 50);
-            const newFileName = `${base}_${Date.now()}_${randomStr}${ext}`;
-            const newPath = path.join(RUTA_LOCAL_ENTRADA, newFileName);
-
-            try {
-                await fs.rename(localPath, newPath);
-                currentFileName = newFileName;
-                localPath = newPath;
-            } catch (renameErr) {
-                console.error(`No se pudo renombrar: ${renameErr.message}`);
-            }
-
-            console.log(`\n---PROCESANDO: ${currentFileName} ---`);
-
-            try {
-                if (!await fs.pathExists(localPath)) {
-                    throw new Error(`El archivo desapareció antes de procesar: ${localPath}`);
-                }
-
-                tempImgDir = path.join(PATHS.tempImg, `scan-${Date.now()}`);
-                await fs.ensureDir(tempImgDir);
-
-                console.log(`[1/4] Renderizando PDF a imágenes en: ${tempImgDir}`);
-                await renderPdfToImages(localPath, tempImgDir, true);
-
-                const images = (await fs.readdir(tempImgDir)).sort();
-                console.log(`[2/4] Imágenes generadas: ${images.length}`);
-
-                if (images.length === 0) throw new Error("Poppler/pdftoppm no generó ninguna imagen.");
-
-                const firstPagePath = path.join(tempImgDir, images[0]);
-                console.log(`[3/4] Intentando leer QR de: ${images[0]}`);
-                const idCaratulaRaw = await readQR(firstPagePath);
-                console.log(`[4/4] Resultado QR Raw: "${idCaratulaRaw}"`);
-
-                if (!idCaratulaRaw) {
-                    console.warn(`WARN: REJECTED - No se detectó QR en la primera página.`);
-                    await handleLocalError(localPath, currentFileName, "SIN_QR");
-                    continue;
-                }
-
-                const idLimpio = idCaratulaRaw.replace(/^"+|"+$/g, "").trim();
-                const excelMetadata = await getDataFromExcel(idLimpio);
-
-                if (!excelMetadata) {
-                    console.warn(`WARN: REJECTED - ID ${idLimpio} no está en el Maestro.`);
-                    await handleLocalError(localPath, currentFileName, `ID_INEXISTENTE_${idLimpio}`);
-                    continue;
-                }
-
-                // ÉXITO
-                const finalPath = path.join(RUTA_LOCAL_ENCOLADO, currentFileName);
-                await fs.move(localPath, finalPath, { overwrite: true });
-
-                // --- AQUÍ AGREGAMOS LA CONFIGURACIÓN DE REINTENTOS ---
-                const job = await splitQueue.add("split", {
-                    filePath: finalPath,
-                    fileName: currentFileName,
-                    idCaratula: idLimpio,
-                    excelMetadata: excelMetadata
-                },
-                    {
-                        attempts: 3, // 3 intentos en total si falla
-                        backoff: {
-                            type: 'exponential',
-                            delay: 40000
-                        },
-                        removeOnComplete: true, // Limpia la memoria de Redis cuando termina con éxito
-                        removeOnFail: false // Si falla 3 veces, lo deja en Redis para que lo revises
-                    });
-
-                console.log(`EXITO: Ticket ${job.id} generado.`);
-
-                await enqueueStatusUpdate(excelMetadata.rowNumber, `Archivo recibido en cola - ${job.id}`);
-
-            } catch (err) {
-                console.error(`ERROR_DETALLE: Archivo: ${currentFileName}`);
-                console.error(` Mensaje: ${err.message || 'Error sin mensaje'}`);
-                await handleLocalError(localPath, currentFileName, `FALLO_SISTEMA: ${err.message || 'Desconocido'}`);
-            } finally {
-                if (tempImgDir) await fs.remove(tempImgDir).catch(() => { });
-            }
-        }
-    } catch (error) {
-        console.error(` CRITICAL: MONITOR_FATAL - ${error.stack}`);
+        await fs.rename(rutaLocal, rutaUnica);
+        rutaLocal = rutaUnica;
+    } catch (err) {
+        console.error(`[MONITOR] No se pudo renombrar ${nombreArchivo}: ${err.message}`);
+        // Continuar con el nombre original si el rename falla
     }
-};
 
-async function handleLocalError(localPath, fileName, motivo) {
-    console.error(`INFO: ERROR_HANDLER - Iniciando proceso de error para ${fileName}. Motivo: ${motivo}`);
+    const nombreActual = path.basename(rutaLocal);
+    console.log(`\n[MONITOR] Procesando: ${nombreActual}`);
 
     try {
-        if (!(await fs.pathExists(localPath))) {
-            console.error(`ERROR_HANDLER_ABORTED: El archivo ${localPath} ya no existe en el disco.`);
+        if (!(await fs.pathExists(rutaLocal))) {
+            throw new Error(`Archivo desapareció: ${rutaLocal}`);
+        }
+
+        // 1. Renderizar primera página para leer QR
+        dirImgTemp = path.join(PATHS.tempImg, `scan-${Date.now()}`);
+        await fs.ensureDir(dirImgTemp);
+        await renderizarPdfAImagenes(rutaLocal, dirImgTemp, true);
+
+        const imagenes = (await fs.readdir(dirImgTemp)).sort();
+        if (!imagenes.length) throw new Error("Poppler no generó ninguna imagen.");
+
+        // 2. Leer QR de la carátula
+        const codigoQR = await leerQR(path.join(dirImgTemp, imagenes[0]));
+        if (!codigoQR) {
+            await moverADriveErrores(rutaLocal, nombreActual, "SIN_QR");
             return;
         }
 
-        console.log(`INFO: Leyendo archivo para subir a errores: ${localPath}`);
-        const fileContent = await fs.readFile(localPath);
+        // 3. Buscar en el Maestro
+        const idLimpio  = codigoQR.replace(/^"+|"+$/g, "").trim();
+        const metadatos = await buscarFilaEnMaestro(idLimpio);
+        if (!metadatos) {
+            await moverADriveErrores(rutaLocal, nombreActual, `ID_INEXISTENTE: ${idLimpio}`);
+            return;
+        }
 
-        console.log(`INFO: Subiendo archivo a Drive (Carpeta Errores)...`);
-        await uploadFileToDrive(fileContent, fileName, SYSTEM_FOLDERS.ERRORES);
-        console.log(`SUCCESS: Archivo de error subido correctamente a Drive.`);
+        // 4. Mover a carpeta de encolado y crear job
+        const rutaFinal = path.join(RUTA_ENCOLADO, nombreActual);
+        await fs.move(rutaLocal, rutaFinal, { overwrite: true });
 
-        await fs.remove(localPath);
-        console.log(`INFO: Archivo local borrado: ${localPath}`);
+        const job = await splitQueue.add(
+            "split",
+            { filePath: rutaFinal, fileName: nombreActual, idCaratula: idLimpio, excelMetadata: metadatos },
+            OPCIONES_JOB
+        );
 
-    } catch (e) {
-        console.error(`CRITICAL_ERROR_HANDLER_FAIL: No se pudo subir/borrar el archivo de error. Detalles: ${e.message}`);
-        if (e.stack) console.error(e.stack);
+        console.log(`[MONITOR] Ticket ${job.id} generado para ${nombreActual}`);
+        await encolarEstado(metadatos.rowNumber, `Archivo recibido en cola — ${job.id}`);
+
+    } catch (err) {
+        console.error(`[MONITOR] Fallo procesando ${nombreActual}: ${err.message}`);
+        await moverADriveErrores(rutaLocal, nombreActual, err.message);
+    } finally {
+        if (dirImgTemp) await fs.remove(dirImgTemp).catch(() => {});
     }
-}
+};
+
+// ─── Ciclo principal ──────────────────────────────────────────────────────────
+
+export const vigilarCarpetaEntrada = async () => {
+    if (await estaEnMantenimiento()) {
+        console.log("[MONITOR] En pausa por mantenimiento.");
+        return;
+    }
+
+    await fs.ensureDir(RUTA_ENTRADA);
+    await fs.ensureDir(RUTA_ENCOLADO);
+
+    const archivos    = await fs.readdir(RUTA_ENTRADA);
+    const archivosPdf = archivos.filter((f) => f.toLowerCase().endsWith(".pdf"));
+
+    for (const nombre of archivosPdf) {
+        await procesarPdf(nombre);
+    }
+};
