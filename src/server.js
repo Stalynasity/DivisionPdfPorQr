@@ -32,10 +32,7 @@ app.listen(PORT, async () => {
     // 3. Cron de mantenimiento semanal
     iniciarSchedulerMantenimiento();
 
-    // 4. Polling de Gmail (cada 60 s)
-    ejecutarEnBucle("GMAIL_POLL", descargaPDFEmail, 60_000);
-
-    // 5. Monitor de carpeta de entrada (cada 4 s)
+    // 4. Monitor de carpeta de entrada (cada 4 s)
     ejecutarEnBucle("MONITOR", vigilarCarpetaEntrada, 4_000);
 });
 

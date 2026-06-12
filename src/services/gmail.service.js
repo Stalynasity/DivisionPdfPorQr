@@ -125,7 +125,19 @@ export const descargaPDFEmail = async () => {
 
     if (messages.length) console.log(`[GMAIL] ${messages.length} mensaje(s) pendientes.`);
 
-    for (const { id } of messages) {
+    // NUEVO: Llevamos un registro de los hilos (threads) procesados con éxito en este ciclo
+    const hilosProcesadosExito = new Set();
+
+    // Extraemos también el threadId del mensaje
+    for (const { id, threadId } of messages) { 
+        
+        // Si ya respondimos a este hilo exitosamente, omitimos los duplicados
+        if (hilosProcesadosExito.has(threadId)) {
+            console.warn(`[GMAIL] Mensaje ${id} omitido (correo duplicado detectado en el hilo ${threadId}).`);
+            await archiveWithLabel(gmail, id, LABEL_OK); // Se archiva directamente para no volver a leerlo
+            continue;
+        }
+
         const { data: msg } = await gmail.users.messages.get({ userId: "me", id });
         const prefix = senderPrefix(getHeader(msg, "From"));
         const pdfParts = findPdfParts(msg.payload.parts);
@@ -134,7 +146,8 @@ export const descargaPDFEmail = async () => {
             console.warn(`[GMAIL] Mensaje ${id} sin PDFs.`);
             await sendReply(gmail, msg, HTML_ERROR);
             await archiveWithLabel(gmail, id, LABEL_ERROR);
-            continue;
+            // No agregamos el hilo al Set por si un segundo correo del mismo hilo SÍ trae el PDF
+            continue; 
         }
 
         let saved = 0;
@@ -158,6 +171,10 @@ export const descargaPDFEmail = async () => {
             await sendReply(gmail, msg, HTML_OK);
             await archiveWithLabel(gmail, id, LABEL_OK);
             console.log(`[GMAIL] Mensaje ${id} procesado — ${saved} PDF(s) guardados.`);
+            
+            // NUEVO: Marcamos este hilo como completado para ignorar el correo fantasma/duplicado
+            hilosProcesadosExito.add(threadId); 
+            
         } else {
             console.warn(`[GMAIL] Mensaje ${id} — todos los adjuntos fallaron.`);
             await sendReply(gmail, msg, HTML_ERROR);
