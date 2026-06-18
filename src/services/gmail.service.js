@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { google } from "googleapis";
 import { getOAuthClient } from "./auth.service.js";
+import redisGmail from "../config/redisGmail.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -10,6 +11,18 @@ const DESTINO = process.env.PATH_ENTRADA_LOCAL;
 const LABEL_OK = "PROCESADO_IDXA";
 const LABEL_ERROR = "ERROR_SIN_PDF";
 const QUERY_UNREAD = `subject:("[IDX] INDEXACION_AUTOMATICA_APP -") is:unread -label:${LABEL_OK}`;
+const REDIS_PREFIX = "gmail:msg:";
+const REDIS_TTL = 60 * 60 * 24 * 7; // 7 días
+
+const mensajeYaProcesado = async (messageId) => {
+    const val = await redisGmail.get(REDIS_PREFIX + messageId);
+    return val !== null;
+};
+
+// Cambiar 'threadId' por 'messageId'
+const marcarMensajeProcesado = async (messageId) => {
+    await redisGmail.set(REDIS_PREFIX + messageId, "1", "EX", REDIS_TTL);
+};
 
 // ─── Helpers privados ─────────────────────────────────────────────────────────
 
@@ -123,37 +136,52 @@ export const descargaPDFEmail = async () => {
     const { data } = await gmail.users.messages.list({ userId: "me", q: QUERY_UNREAD });
     const messages = data.messages ?? [];
 
-    if (messages.length) console.log(`[GMAIL] ${messages.length} mensaje(s) pendientes.`);
+    if (!messages.length) return;
 
-    // NUEVO: Llevamos un registro de los hilos (threads) procesados con éxito en este ciclo
-    const hilosProcesadosExito = new Set();
+    // FIX #2 — obtener internalDate y ordenar cronológicamente antes de procesar
+    const mensajesConFecha = await Promise.all(
+        messages.map(async ({ id, threadId }) => {
+            const { data: meta } = await gmail.users.messages.get({
+                userId: "me", id, format: "metadata",
+                metadataHeaders: ["From", "Subject"],
+            });
+            return { id, threadId, internalDate: Number(meta.internalDate) };
+        })
+    );
+    mensajesConFecha.sort((a, b) => a.internalDate - b.internalDate);
 
-    // Extraemos también el threadId del mensaje
-    for (const { id, threadId } of messages) { 
-        
-        // Si ya respondimos a este hilo exitosamente, omitimos los duplicados
-        if (hilosProcesadosExito.has(threadId)) {
-            console.warn(`[GMAIL] Mensaje ${id} omitido (correo duplicado detectado en el hilo ${threadId}).`);
-            await archiveWithLabel(gmail, id, LABEL_OK); // Se archiva directamente para no volver a leerlo
+    console.log(`[GMAIL] ${mensajesConFecha.length} mensaje(s) pendientes.`);
+
+    for (const { id, threadId } of mensajesConFecha) {
+
+        // FIX #1 CORREGIDO: Usar el ID del mensaje, no del hilo
+        if (await mensajeYaProcesado(id)) {
+            console.warn(`[GMAIL] Mensaje ${id} omitido — mensaje ya procesado (Redis).`);
+            await archiveWithLabel(gmail, id, LABEL_OK);
             continue;
         }
 
         const { data: msg } = await gmail.users.messages.get({ userId: "me", id });
         const prefix = senderPrefix(getHeader(msg, "From"));
-        const pdfParts = findPdfParts(msg.payload.parts);
+        const pdfParts = findPdfParts(msg.payload.parts ?? []);
 
         if (!pdfParts.length) {
             console.warn(`[GMAIL] Mensaje ${id} sin PDFs.`);
             await sendReply(gmail, msg, HTML_ERROR);
             await archiveWithLabel(gmail, id, LABEL_ERROR);
-            // No agregamos el hilo al Set por si un segundo correo del mismo hilo SÍ trae el PDF
-            continue; 
+            continue;
         }
 
         let saved = 0;
+        let failed = 0;
 
         for (const part of pdfParts) {
-            if (!part.body.attachmentId) continue;
+            // FIX #3 — contar adjuntos sin ID como fallo en vez de ignorarlos
+            if (!part.body?.attachmentId) {
+                console.warn(`[GMAIL] Parte sin attachmentId: ${part.filename}`);
+                failed++;
+                continue;
+            }
             try {
                 const { data: attach } = await gmail.users.messages.attachments.get({
                     userId: "me", messageId: id, id: part.body.attachmentId,
@@ -161,22 +189,23 @@ export const descargaPDFEmail = async () => {
                 const buffer = Buffer.from(attach.data, "base64url");
                 const fileName = `${prefix}-${Date.now()}_${part.filename}`;
                 await fs.writeFile(path.join(DESTINO, fileName), buffer);
+                console.log(`[GMAIL] Guardado: ${fileName}`);
                 saved++;
             } catch (err) {
                 console.error(`[GMAIL] Error guardando ${part.filename}: ${err.message}`);
+                failed++;
             }
         }
 
         if (saved > 0) {
             await sendReply(gmail, msg, HTML_OK);
             await archiveWithLabel(gmail, id, LABEL_OK);
-            console.log(`[GMAIL] Mensaje ${id} procesado — ${saved} PDF(s) guardados.`);
             
-            // NUEVO: Marcamos este hilo como completado para ignorar el correo fantasma/duplicado
-            hilosProcesadosExito.add(threadId); 
-            
+            // FIX #4 CORREGIDO: Guardar en Redis usando el ID del mensaje
+            await marcarMensajeProcesado(id); 
+            console.log(`[GMAIL] Mensaje ${id} procesado — ${saved} PDF(s) guardados, ${failed} fallidos.`);
         } else {
-            console.warn(`[GMAIL] Mensaje ${id} — todos los adjuntos fallaron.`);
+            console.warn(`[GMAIL] Mensaje ${id} — todos los adjuntos fallaron (${failed} errores).`);
             await sendReply(gmail, msg, HTML_ERROR);
             await archiveWithLabel(gmail, id, LABEL_ERROR);
         }

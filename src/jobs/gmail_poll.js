@@ -1,6 +1,6 @@
 import { descargaPDFEmail } from "../services/gmail.service.js";
 
-const INTERVALO_MS = 60000;
+const INTERVALO_MS = 5000;
 
 async function runPoll() {
     try {
