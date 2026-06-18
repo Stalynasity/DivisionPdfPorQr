@@ -1,258 +1,161 @@
 import fs from "fs-extra";
-import { PDFDocument } from "pdf-lib";
-import { renderPdfToImages } from "./render.service.js";
-import { readQR } from "./qr.service.js";
-import { saveToDrive } from "./drive.service.js";
-import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
-import pLimit from "p-limit";
 import path from "path";
-import { updateSheetRow, insertDocumentRowsBatch } from "../services/excel.service.js";
+import { PDFDocument } from "pdf-lib";
+import pLimit from "p-limit";
+import { renderizarPdfAImagenes } from "./render.service.js";
+import { leerQR } from "./qr.service.js";
+import { subirArchivoDrive } from "./drive.service.js";
+import { encolarEstado, encolarFilasDocumentos, encolarActualizacionCelda } from "./excel.service.js";
+import { TENANT_FOLDERS, PATHS } from "../config/tenants.js";
+
+/** Sanitiza un string para usarlo en nombres de archivo. */
+const sanitizarNombre = (str) => String(str).replace(/[/\\?%*:|"<>]/g, "-");
+
+/** Devuelve la fecha actual como "YYYY-MM-DD HH:MM:SS". */
+const fechaActual = () => new Date().toISOString().replace("T", " ").split(".")[0];
 
 /**
- * Procesa la división de un PDF local basándose en separadores QR.
- * @param {string} pdfPath - Ruta absoluta del archivo PDF en el sistema local.
- * @param {string} jobId - ID del ticket/trabajo para logs y carpetas temporales.
- * @param {string} targetDriveFolderId - ID de la carpeta de Drive donde se guardarán los segmentos.
- * @param {object} excelMetadata - Datos del registro maestro de Excel.
+ * Divide un PDF en segmentos según separadores QR (SEP|<código>),
+ * sube cada parte a Drive y registra los resultados en Sheets vía cola Redis.
+ *
+ * @param {string} rutaPdf           - Ruta absoluta del PDF en disco
+ * @param {string} jobId             - ID del job BullMQ
+ * @param {string} carpetaDestino    - Carpeta Drive destino para los segmentos
+ * @param {object} metadatos         - Fila del Maestro (incluye rowNumber)
  */
-export const processPdfSplit = async (pdfPath, jobId, targetDriveFolderId, excelMetadata) => {
-    const startTime = Date.now();
-    const tmpDir = path.join(PATHS.tempImg, `job-${jobId}`);
-    const logId = `JOB:${jobId}`;
+export const dividirPdf = async (rutaPdf, jobId, carpetaDestino, metadatos) => {
+    const inicio  = Date.now();
+    const tmpDir  = path.join(PATHS.tempImg, `job-${jobId}`);
+    const logId   = `JOB:${jobId}`;
 
     try {
-        // --- VALIDACIÓN INICIAL ---
-        if (!(await fs.pathExists(pdfPath))) {
-            throw new Error(`ARCHIVO_NO_ENCONTRADO: La ruta ${pdfPath} no existe.`);
+        // ── 1. Validación ────────────────────────────────────────────────────
+        if (!(await fs.pathExists(rutaPdf))) {
+            throw new Error(`ARCHIVO_NO_ENCONTRADO: ${rutaPdf}`);
         }
 
         await fs.ensureDir(tmpDir);
         await fs.emptyDir(tmpDir);
 
-        // --- RENDERIZADO ---
-        // Convierte cada página del PDF en imagen para lectura de QR
-        await renderPdfToImages(pdfPath, tmpDir);
-        const files = (await fs.readdir(tmpDir)).sort((a, b) => {
-            const numA = parseInt(a.match(/\d+/)?.[0] || 0);
-            const numB = parseInt(b.match(/\d+/)?.[0] || 0);
-            return numA - numB;
+        // ── 2. Renderizar páginas ────────────────────────────────────────────
+        await renderizarPdfAImagenes(rutaPdf, tmpDir);
+
+        const archivos = (await fs.readdir(tmpDir)).sort((a, b) => {
+            const n = (f) => parseInt(f.match(/\d+/)?.[0] ?? 0);
+            return n(a) - n(b);
         });
-        console.log("Archivos renderizados en total:", files.length);
 
-        if (!files.length) throw new Error("PDF_EMPTY_OR_RENDER_FAILED");
-        console.log(`INFO: SPLIT_RENDER - ${logId} | Pages: ${files.length}`);
+        if (!archivos.length) throw new Error("PDF_VACIO_O_RENDER_FALLIDO");
+        console.log(`[SPLIT] ${logId} | Páginas renderizadas: ${archivos.length}`);
 
-        // --- LECTURA QR (PARALELA) ---
-        const limit = pLimit(4); // Máximo 4 procesos de OCR simultáneos
-        const qrResults = await Promise.all(
-            files.slice(1).map(file => limit(async () => {
-                const imgPath = path.join(tmpDir, file);
-                // Extrae el número de página del nombre del archivo (ej: page-1.png -> 0)
-                const match = file.match(/\d+/);
-                const pageIdx = match ? parseInt(match[0]) - 1 : 0;
-                let qrData = null;
-                try {
-                    qrData = await readQR(imgPath);
-                    if (qrData) qrData = qrData.replace(/^"+|"+$/g, "").trim();
-                } catch (err) {
-                    console.warn(`WARN: QR_READ_FAIL - ${logId} | Page: ${pageIdx + 1} | Msg: ${err.message}`);
-                }
-                return { file, qrData, pageIdx };
-            }))
+        // ── 3. Leer QR en paralelo (se omite la primera página, es la carátula) ──
+        const limitarQR  = pLimit(4);
+        const resultadosQR = await Promise.all(
+            archivos.slice(1).map((archivo) =>
+                limitarQR(async () => {
+                    const indicePagina = parseInt(archivo.match(/\d+/)?.[0] ?? 1) - 1;
+                    let codigoQR = null;
+                    try {
+                        codigoQR = await leerQR(path.join(tmpDir, archivo));
+                        if (codigoQR) codigoQR = codigoQR.replace(/^"+|"+$/g, "").trim();
+                    } catch (err) {
+                        console.warn(`[SPLIT] Error QR — ${logId} | Pág ${indicePagina + 1}: ${err.message}`);
+                    }
+                    return { codigoQR, indicePagina };
+                })
+            )
         );
 
-        // --- SEGMENTACIÓN POR BLOQUES ---
-        // const bloques = [];
-        // let bloqueActual = [];
-        // let codigoActual = null;
-
-        // for (const item of qrResults) {
-        //     // Validamos que sea un QR de nuestro sistema (SEP|)
-        //     if (item.qrData && item.qrData.startsWith("SEP|")) {
-        //         // Guardar bloque anterior si existía
-        //         if (bloqueActual.length > 0 && codigoActual) {
-        //             bloques.push({ files: [...bloqueActual], codigoCategoria: codigoActual });
-        //         }
-
-        //         // Nuevo bloque
-        //         codigoActual = item.qrData.split("|")[1]?.trim() || "DESCONOCIDO";
-        //         bloqueActual = [];
-        //         // Añadimos la página actual como SEPARADOR (para no incluirla en el PDF final)
-        //         bloqueActual.push({ ...item, esSeparador: true });
-        //     } else {
-        //         // Es una página de contenido (o un QR que no es separador)
-        //         if (codigoActual) {
-        //             bloqueActual.push({ ...item, esSeparador: false });
-        //         }
-        //     }
-        // }
-
-
-        // --- 4. SEGMENTACIÓN POR BLOQUES ---
+        // ── 4. Segmentar por bloques SEP|<código> ───────────────────────────
         const bloques = [];
-        let bloqueActual = { codigo: null, indices: [] };
+        let bloqueActual = null;
 
-        for (const item of qrResults) {
-            if (item.qrData?.startsWith("SEP|")) {
-                // Guardar bloque previo si tiene contenido
-                if (bloqueActual.codigo && bloqueActual.indices.length > 0) {
-                    bloques.push({ ...bloqueActual });
-                }
-                // Nuevo separador detectado
-                bloqueActual.codigo = item.qrData.split("|")[1]?.trim() || "DESCONOCIDO";
-                bloqueActual.indices = [];
-            } else if (bloqueActual.codigo) {
-                // Es página de contenido
-                bloqueActual.indices.push(item.pageIdx);
+        for (const { codigoQR, indicePagina } of resultadosQR) {
+            if (codigoQR?.startsWith("SEP|")) {
+                if (bloqueActual?.indices.length) bloques.push(bloqueActual);
+                bloqueActual = { codigo: codigoQR.split("|")[1]?.trim() ?? "DESCONOCIDO", indices: [] };
+            } else if (bloqueActual) {
+                bloqueActual.indices.push(indicePagina);
             }
         }
-        if (bloqueActual.codigo && bloqueActual.indices.length > 0) bloques.push(bloqueActual);
+        if (bloqueActual?.indices.length) bloques.push(bloqueActual);
 
-        // Agregar el último bloque detectado
-        if (bloqueActual.length) {
-            bloques.push({
-                files: bloqueActual,
-                codigoCategoria: codigoActual || "DESCONOCIDO"
-            });
+        if (!bloques.length) {
+            console.warn(`[SPLIT] ${logId} | Sin separadores QR válidos.`);
+            throw new Error("NO_CATEGORIES_FOUND");
         }
 
-        // --- GENERACIÓN DE PDFs Y CARGA A DRIVE ---
-        // const pdfData = await fs.readFile(pdfPath);
-        // const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
-        // const uploadTasks = [];
+        // ── 5. Cargar PDF fuente ─────────────────────────────────────────────
+        const bufferPdf  = await fs.readFile(rutaPdf);
+        const docFuente  = await PDFDocument.load(bufferPdf, { ignoreEncryption: true });
+        const idSeguro   = sanitizarNombre(metadatos.ID_Caratula);
 
-        // // 1. Generar y Guardar PDF Completo (Respaldo)
-        // uploadTasks.push((async () => {
-        //     try {
-        //         const pdfCompleto = await PDFDocument.create();
-        //         const indices = Array.from({ length: originalPdf.getPageCount() }, (_, i) => i);
-        //         const copiedPages = await pdfCompleto.copyPages(originalPdf, indices);
-        //         copiedPages.forEach(p => pdfCompleto.addPage(p));
-        //         const bytes = await pdfCompleto.save();
-
-        //         const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
-        //         await saveToDrive(Buffer.from(bytes), nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
-
-        //         await updateSheetRow(
-        //             excelMetadata.rowNumber,
-        //             "maestro",
-        //             "Pdf_Completo",
-        //             "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
-        //         );
-
-        //         return { categoria: "PDF_COMPLETO" };
-        //     } catch (e) {
-        //         console.error(`ERROR: FULL_PDF_FAILED - ${logId} | Msg: ${e.message}`);
-        //         return null;
-        //     }
-        // })());
-        // --- 4. GENERACIÓN Y CARGA PARALELIZADA ---
-        const pdfData = await fs.readFile(pdfPath);
-        const originalPdf = await PDFDocument.load(pdfData, { ignoreEncryption: true });
-
-        console.log(`${logId} Iniciando subida de archivos (Paralelo)...`);
-
-        // Tarea de respaldo: Usamos el buffer original directamente (más rápido)
-        const backupTask = (async () => {
-            const nombreCompleto = `AUTOMATICO_${excelMetadata.ID_Caratula}.pdf`;
-            const url = await saveToDrive(pdfData, nombreCompleto, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
-
-            await updateSheetRow(
-                excelMetadata.rowNumber,
-                "maestro",
+        // ── 6. Subir PDF completo (en paralelo con los segmentos) ────────────
+        const tareaRespaldo = (async () => {
+            const nombre  = `GEN_${idSeguro}_${jobId}.pdf`;
+            const driveId = await subirArchivoDrive(bufferPdf, nombre, TENANT_FOLDERS.PDF_COMPLETO_AUTOMATIZACION);
+            await encolarActualizacionCelda(
+                metadatos.rowNumber,
                 "Pdf_Completo",
-                "DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/" + nombreCompleto
+                `DIGITALIZACION_APP/DOCUMENTOS_COMPLETOS_PROCESADOS/${nombre}`
             );
-            return { categoria: "PDF_COMPLETO", url };
+            return { categoria: "PDF_COMPLETO", url: driveId };
         })();
 
-        // Tareas de segmentos: Con límite de 3 para proteger el ancho de banda
-        const uploadLimit = pLimit(3);
-        const segmentTasks = bloques.map((bloque) => uploadLimit(async () => {
-            try {
-                // Obtenemos solo los índices de las páginas que NO son separadores
-                const indices = bloque.indices || bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
-                if (indices.length === 0) return null;
+        // ── 7. Generar y subir segmentos (máx 2 en paralelo) ────────────────
+        const limitarSubida = pLimit(2);
+        const tareasSegmentos = bloques.map((bloque) =>
+            limitarSubida(async () => {
+                if (!bloque.indices.length) return null;
+                try {
+                    const nuevoDoc = await PDFDocument.create();
+                    const paginas  = await nuevoDoc.copyPages(docFuente, bloque.indices);
+                    paginas.forEach((p) => nuevoDoc.addPage(p));
 
-                const nuevoPdf = await PDFDocument.create();
-                const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
-                copiedPages.forEach(p => nuevoPdf.addPage(p));
+                    const nombre  = `${sanitizarNombre(bloque.codigo)}_${idSeguro}.pdf`;
+                    const bytes   = await nuevoDoc.save({ useObjectStreams: false, addDefaultFont: false });
+                    const driveId = await subirArchivoDrive(Buffer.from(bytes), nombre, carpetaDestino);
 
-                // useObjectStreams: false para compatibilidad y velocidad
-                const bytes = await nuevoPdf.save({ useObjectStreams: false });
-                const nombreSegmento = `${bloque.codigo || bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
-                const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
+                    return { categoria: bloque.codigo, url: driveId, nombre, totalPaginas: nuevoDoc.getPageCount() };
+                } catch (err) {
+                    console.error(`[SPLIT] Error en segmento — ${logId} | ${bloque.codigo}: ${err.message}`);
+                    if (/getaddrinfo|timeout|econnreset/i.test(err.message)) {
+                        throw new Error(`REINTENTO_POR_RED: ${err.message}`);
+                    }
+                    return null; // error no crítico: omitir segmento
+                }
+            })
+        );
 
-                return { categoria: bloque.codigo || bloque.codigoCategoria, url, nombre: nombreSegmento };
-            } catch (e) {
-                console.error(`${logId} Error en segmento ${bloque.codigo}: ${e.message}`);
-                return null;
-            }
-        }));
+        // ── 8. Esperar todo y filtrar nulos y el respaldo ────────────────────
+        const todosResultados   = await Promise.all([tareaRespaldo, ...tareasSegmentos]);
+        const resultadosValidos = todosResultados.filter((r) => r && r.categoria !== "PDF_COMPLETO");
 
-        // Ejecutamos todo en paralelo
-        const allResults = await Promise.all([backupTask, ...segmentTasks]);
-
-        // 2. Generar y Guardar Segmentos Individuales
-        // bloques.forEach((bloque) => {
-        //     uploadTasks.push((async () => {
-        //         try {
-        //             const nuevoPdf = await PDFDocument.create();
-        //             // Filtramos para no incluir la página del separador QR en el PDF final
-        //             const indices = bloque.files.filter(f => !f.esSeparador).map(f => f.pageIdx);
-        //             if (indices.length === 0) return null;
-
-        //             const copiedPages = await nuevoPdf.copyPages(originalPdf, indices);
-        //             copiedPages.forEach(p => nuevoPdf.addPage(p));
-        //             const bytes = await nuevoPdf.save();
-
-        //             const nombreSegmento = `${bloque.codigoCategoria}_${excelMetadata.ID_Caratula}.pdf`;
-        //             const url = await saveToDrive(Buffer.from(bytes), nombreSegmento, targetDriveFolderId);
-
-        //             return { categoria: bloque.codigoCategoria, url };
-        //         } catch (e) {
-        //             console.error(`ERROR: BLOCK_FAILED - ${logId} | Category: ${bloque.codigoCategoria} | Msg: ${e.message}`);
-        //             return null;
-        //         }
-        //     })());
-        // });
-
-        // const rawResults = await Promise.all(uploadTasks);
-        // const validResults = rawResults.filter(r => r !== null && r.categoria !== "PDF_COMPLETO");
-        const validResults = allResults.filter(r => r && r.categoria !== "PDF_COMPLETO");
-
-        // --- REGISTRO BATCH EN EXCEL ---
-        if (validResults.length > 0) {
-            try {
-                const fechaAhora = new Date().toISOString().replace('T', ' ').split('.')[0];
-                const excelRows = validResults.map(res => [
-                    res.url,                                      // ID Drive
-                    `${res.categoria}_${excelMetadata.ID_Caratula}.pdf`, // Nombre
-                    excelMetadata.ID_Caratula,                    // Relación
-                    res.categoria,                                // Tipo
-                    excelMetadata.No_Identificacion,              // Cédula/RUC
-                    `https://drive.google.com/file/d/${res.url}/view`, // Link
-                    fechaAhora                                    // Fecha
-                ]);
-
-                await insertDocumentRowsBatch(excelRows, excelMetadata.APP_ASIGNADA);
-            } catch (e) {
-                console.error(`ERROR: EXCEL_BATCH_FAILED - ${logId} | Msg: ${e.message}`);
-            }
+        // ── 9. Registrar segmentos en Sheets vía cola Redis ──────────────────
+        if (resultadosValidos.length) {
+            const fecha = fechaActual();
+            const filas = resultadosValidos.map((r) => [
+                r.url,
+                `${r.categoria}_${metadatos.ID_Caratula}.pdf`,
+                metadatos.ID_Caratula,
+                r.categoria,
+                metadatos.No_Identificacion,
+                `https://drive.google.com/file/d/${r.url}/view`,
+                fecha,
+            ]);
+            await encolarFilasDocumentos(filas, metadatos.APP_ASIGNADA);
         }
 
-        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.log(`INFO: SPLIT_COMPLETED - ${logId} | Duration: ${duration}s`);
+        const duracion = ((Date.now() - inicio) / 1000).toFixed(2);
+        console.log(`[SPLIT] Completado — ${logId} | ${duracion}s | Segmentos: ${resultadosValidos.length}`);
 
-        return { idCaratula: excelMetadata.ID_Caratula, jobId, archivos: validResults };
+        return { idCaratula: metadatos.ID_Caratula, jobId, archivos: resultadosValidos };
 
     } catch (err) {
-        console.error(`CRITICAL: SPLIT_FATAL - ${logId} | Msg: ${err.message}`);
+        console.error(`[SPLIT] Fatal — ${logId}: ${err.message}`);
+        await encolarEstado(metadatos.rowNumber, `SPLIT_FATAL — ${err.message}`);
         throw err;
     } finally {
-        // --- LIMPIEZA DE ARCHIVOS LOCALES ---
-        await Promise.all([
-            fs.remove(tmpDir).catch(() => { })
-        ]);
+        await fs.remove(tmpDir).catch(() => {});
     }
 };

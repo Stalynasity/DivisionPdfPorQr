@@ -1,5 +1,5 @@
-import { getOrCreateFolderPath, saveToDrive } from "../src/services/drive.service.js";
-import { getDataFromExcel, updateSheetRow } from "../src/services/excel.service.js";
+import { getOrCreateFolderPath, uploadFileToDrive } from "../src/services/drive.service.js";
+import { getDataFromExcel } from "../src/services/excel.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -30,7 +30,7 @@ const testFolderLogic = async () => {
         // 2. Intentar subir un archivo de prueba pequeño
         console.log("2. Subiendo archivo de prueba...");
         const mockBuffer = Buffer.from("Este es un PDF de prueba");
-        const fileId = await saveToDrive(mockBuffer, "TEST_ARCHIVO.pdf", targetId);
+        const fileId = await uploadFileToDrive(mockBuffer, "TEST_ARCHIVO.pdf", targetId);
 
         console.log(`🚀 TEST EXITOSO. Archivo subido con ID: ${fileId}`);
         console.log(`🔗 Revisa tu Drive en: https://drive.google.com/drive/folders/${targetId}`);

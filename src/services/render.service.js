@@ -2,39 +2,29 @@ import { execFile } from "child_process";
 import path from "path";
 import { PATHS } from "../config/tenants.js";
 
+const PREFIJO_SALIDA = { primera: "page", completo: "pg" };
+
 /**
- * Renderiza el PDF a imágenes en alta fidelidad.
+ * Renderiza un PDF a imágenes PNG usando Poppler (pdftoppm).
+ *
+ * @param {string}  rutaPdf      - Ruta absoluta al PDF
+ * @param {string}  dirSalida    - Carpeta donde se guardan las imágenes
+ * @param {boolean} soloPrimera  - Si true, renderiza solo la primera página
  */
-export const renderPdfToImages = async (pdfPath, outputDir, onlyFirstPage = false) => {
+export const renderizarPdfAImagenes = (rutaPdf, dirSalida, soloPrimera = false) => {
     return new Promise((resolve, reject) => {
-        const popplerBin = PATHS.binaries.poppler;
+        const binario = PATHS.binaries.poppler;
+        if (!binario) return reject(new Error("CONFIG_ERROR: Binario de Poppler no definido"));
 
-        if (!popplerBin) {
-            return reject(new Error("CONFIG_ERROR: Binario de Poppler no definido"));
-        }
-        const args = ["-png", "-r", "100"];
+        const args = ["-png", "-r", "250"];
+        if (soloPrimera) args.push("-f", "1", "-l", "1");
 
-        if (onlyFirstPage) {
-            args.push("-f", "1", "-l", "1");
-        }
+        const prefijo = soloPrimera ? PREFIJO_SALIDA.primera : PREFIJO_SALIDA.completo;
+        args.push(path.normalize(rutaPdf), path.join(dirSalida, prefijo));
 
-        const cleanPdfPath = path.normalize(pdfPath);
-        // Al usar -singlefile, el nombre será exactamente "page.png"
-        const outputPrefix = onlyFirstPage ? "page" : "pg";
-        const cleanOutputPath = path.join(outputDir, outputPrefix);
-
-        args.push(cleanPdfPath, cleanOutputPath);
-
-        const mode = onlyFirstPage ? "PRIMERA_HOJA" : "FULL_PDF";
-        console.log(` [RENDERER] Renderizando calidad original (${mode}): ${path.basename(pdfPath)}`);
-
-        execFile(popplerBin, args, (err, stdout, stderr) => {
-            if (err) {
-                const reason = stderr?.trim() || err.message;
-                console.error(` [RENDERER] Error: ${reason}`);
-                return reject(new Error(`POPPLER_ERROR: ${reason}`));
-            }
-            resolve(stdout);
+        execFile(binario, args, (err, _stdout, stderr) => {
+            if (err) return reject(new Error(`POPPLER_ERROR: ${stderr?.trim() || err.message}`));
+            resolve();
         });
     });
 };

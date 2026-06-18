@@ -1,44 +1,68 @@
 import express from "express";
 import dotenv from "dotenv";
-import { watchInputFolder } from "./services/monitor.service.js";
+import { getOAuthClient } from "./services/auth.service.js";
+import { iniciarCiclosBatch } from "./services/batch.service.js";
+import { iniciarSchedulerMantenimiento } from "./services/maintenance.service.js";
+import { descargaPDFEmail } from "./services/gmail.service.js";
+import { vigilarCarpetaEntrada } from "./services/monitor.service.js";
 
-dotenv.config({ path: "./.env" });
+dotenv.config();
 
-const app = express();
+const app  = express();
+const PORT = process.env.PORT ?? 3010;
 app.use(express.json());
 
-const PORT = process.env.PORT || 3010;
+// ─── Arranque ─────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-    console.log("---------------------------------------------------------");
-    console.log(`API PDF Split inicializada en puerto ${PORT}`);
+app.listen(PORT, async () => {
+    console.log(`[SERVER] Escuchando en puerto ${PORT}`);
 
-    const startMonitoring = async () => {
-        const timestamp = new Date().toLocaleString();
-        
-        try {
-            await watchInputFolder();
+    // 1. Validar credenciales Google — si falla, no tiene sentido arrancar
+    try {
+        await getOAuthClient();
+        console.log("[SERVER] Credenciales de Google OK");
+    } catch (err) {
+        console.error(`[CRITICAL] Autorización Google fallida: ${err.message}`);
+        process.exit(1);
+    }
 
-        } catch (error) {
-            console.error(`[${timestamp}] ERROR: MONITOR_FAILED - Excepción en el ciclo de monitoreo`);
-            console.error(` MOTIVO: ${error.message}`);
-            
-            if (error.stack) {
-                console.error(`DETALLE: ${error.stack.split('\n')[1]}`); // Muestra la línea del error
-            }
-        } finally {
-            // Importante: No bajar de 4000ms para no saturar las APIs de Google
-            // El uso de setTimeout asegura que el siguiente ciclo solo empiece DESPUÉS de que termine el actual
-            setTimeout(startMonitoring, 4000);
-        }
-    };
+    // 2. Batch Redis → Sheets
+    iniciarCiclosBatch();
 
-    // Iniciar el ciclo por primera vez
-    startMonitoring();
+    // 3. Cron de mantenimiento semanal
+    iniciarSchedulerMantenimiento();
+
+    // 4. Monitor de carpeta de entrada (cada 4 s)
+    ejecutarEnBucle("MONITOR", vigilarCarpetaEntrada, 4_000);
 });
 
-// Manejo de cierres limpios
-process.on('SIGINT', () => {
-    console.log("\nINFO: Apagando servidor de monitoreo...");
+// ─── Cierre limpio ────────────────────────────────────────────────────────────
+
+process.on("SIGINT", () => {
+    console.log("\n[SERVER] Apagando...");
     process.exit(0);
 });
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+/**
+ * Ejecuta una función en bucle con un intervalo fijo entre cada llamada.
+ * Los errores se loguean pero nunca detienen el ciclo.
+ *
+ * @param {string}   nombre      - Nombre del ciclo para los logs
+ * @param {Function} fn          - Función async a ejecutar
+ * @param {number}   intervaloMs - Milisegundos de espera entre ejecuciones
+ */
+function ejecutarEnBucle(nombre, fn, intervaloMs) {
+    const ciclo = async () => {
+        try {
+            await fn();
+        } catch (err) {
+            console.error(`[${nombre}] Error en ciclo: ${err.message}`);
+        } finally {
+            setTimeout(ciclo, intervaloMs);
+        }
+    };
+    console.log(`[SERVER] ${nombre} iniciado (intervalo: ${intervaloMs / 1000}s)`);
+    ciclo();
+}

@@ -1,142 +1,155 @@
+import fs from "fs-extra";
+import path from "path";
 import { Worker } from "bullmq";
 import { connection } from "../config/redis.js";
-import { processPdfSplit } from "../services/split.service.js";
-import { moveFile, getOrCreateFolderPath, uploadToDrive } from "../services/drive.service.js";
+import { dividirPdf } from "../services/split.service.js";
+import { obtenerOCrearRutaCarpeta, subirArchivoDrive } from "../services/drive.service.js";
+import { encolarEstado, estaEnMantenimiento } from "../services/excel.service.js";
 import { SYSTEM_FOLDERS } from "../config/tenants.js";
-import { getDataFromExcel, updateSheetRow } from "../services/excel.service.js";
-import fs from "fs-extra";
 import dotenv from "dotenv";
-import path from "path";
 
 dotenv.config();
 
-const processor = async (job) => {
-    const { filePath, fileName, idCaratula } = job.data;
-    const logId = `TICKET:${job.id} | ID:${idCaratula}`;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    // Declaramos la variable fuera para que sea accesible en el catch
-    /** @type {import('../interfaces/excel.interface').ExcelMetadata | null} */
-    let excelMetadata = null;
+/**
+ * Sube el archivo al Drive de errores para inspección manual.
+ * Best-effort: nunca lanza, la recuperación no debe romper el flujo.
+ */
+const moverADriveErrores = async (rutaArchivo, nombreArchivo) => {
+    try {
+        if (!(await fs.pathExists(rutaArchivo))) return;
+        const buffer = await fs.readFile(rutaArchivo);
+        await subirArchivoDrive(buffer, `ERROR_${nombreArchivo}`, SYSTEM_FOLDERS.ERRORES);
+        console.log(`[WORKER] Respaldado en Drive/ERRORES: ${nombreArchivo}`);
+    } catch (err) {
+        console.error(`[WORKER] Falló el respaldo: ${err.message}`);
+    }
+};
+
+const guardarMetadatosLocales = async (idSof, jobId, nombreArchivo, resultado, metadatos) => {
+    const dir      = path.resolve(process.env.Local_metadata ?? "metadata");
+    const nombre   = idSof.replace(/[^a-z0-9]/gi, "-");
+    const rutaJson = path.join(dir, `meta_${nombre}.json`);
+
+    await fs.ensureDir(dir);
+    await fs.writeJson(rutaJson, { jobId, originalFileName: nombreArchivo, resultMetadata: resultado, clienteData: metadatos }, { spaces: 2 });
+    return rutaJson;
+};
+
+/**
+ * Construye el ID SOF desde los metadatos.
+ * Formato: CAR_<iniciales><sufijo>-<identificacion>
+ */
+const construirIdSof = (metadatos) => {
+    const sufijo    = String(metadatos.ID_Caratula).split("_").pop() ?? "NULL";
+    const iniciales = metadatos.Usuario.split(".").map((p) => p[0]).join("").toUpperCase();
+    return `CAR_${iniciales}${sufijo}-${metadatos.No_Identificacion}`;
+};
+
+// ─── Procesador ───────────────────────────────────────────────────────────────
+
+const procesador = async (job) => {
+    if (await estaEnMantenimiento()) {
+        throw new Error("WAIT_MAINTENANCE: sistema en ventana de mantenimiento.");
+    }
+
+    const { filePath, fileName, idCaratula, excelMetadata: metadatos } = job.data;
+    const logId           = `TICKET:${job.id} | ID:${idCaratula}`;
+    const maxIntentos     = job.opts.attempts ?? 3;
+    const esIntentoFinal  = job.attemptsMade + 1 >= maxIntentos;
+
+    if (!(await fs.pathExists(filePath))) {
+        throw new Error(`ARCHIVO_NO_ENCONTRADO: ${filePath}`);
+    }
+
+    if (!metadatos) {
+        console.warn(`[WORKER] Sin metadatos — ${logId}`);
+        await moverADriveErrores(filePath, fileName);
+        return { status: "skipped_no_metadata" };
+    }
 
     try {
-        console.log(`INFO: WORKER_START - ${logId} | File: ${fileName}`);
-
-        // 1. Validar metadata en Excel (Dentro del try por si falla la red/API)
-        excelMetadata = await getDataFromExcel(idCaratula);
-
-        if (!excelMetadata) {
-            console.warn(`WARN: DATA_MISSING - ${logId} | ID no encontrado en Maestro`);
-
-            if (await fs.pathExists(filePath)) {
-                const fileBuffer = await fs.readFile(filePath);
-                await uploadToDrive(fileName, fileBuffer, SYSTEM_FOLDERS.ERRORES);
-                await fs.remove(filePath);
-            }
-            // Retornamos en lugar de lanzar error para que el job se marque como completado (con aviso)
-            // o lanza un error si prefieres que BullMQ lo reintente.
-            return { status: 'error_not_found_in_excel' };
-        }
-
-        // 2. Actualizar estado inicial
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", "Separación en curso...");
-
-        // 3. Preparar carpetas de destino
-        const rootDigitalizados = process.env.ID_CARPETA_DIGITALIZADOS;
-        const targetDriveFolderId = await getOrCreateFolderPath(rootDigitalizados, [
-            excelMetadata.Usuario || "SIN_USUARIO",
-            excelMetadata.No_Identificacion || "0000000000",
-            excelMetadata.Proceso || "GENERAL"
-        ]);
-
-        // 4. VALIDACIÓN: Disco
-        if (!(await fs.pathExists(filePath))) {
-            throw new Error(`FILE_NO_ENCONTRADO_EN_DISCO: ${filePath}`);
-        }
-
-        // 5. PROCESAR SPLIT
-        const resultMetadata = await processPdfSplit(
-            filePath,
-            job.id,
-            targetDriveFolderId,
-            excelMetadata
+        // 1. Resolver carpeta destino en Drive
+        const carpetaDestino = await obtenerOCrearRutaCarpeta(
+            process.env.ID_CARPETA_DIGITALIZADOS,
+            [
+                metadatos.Usuario           ?? "SIN_USUARIO",
+                metadatos.No_Identificacion ?? "1000000000",
+                metadatos.Proceso           ?? "GENERAL",
+            ]
         );
 
-        // 6. GUARDAR JSON LOCAL
-        const metadataDir = path.resolve(process.env.Local_metadata || "metadata");
-        await fs.ensureDir(metadataDir);
-        const safeIdCaratula = idCaratula.replace(/[^a-z0-9]/gi, '_');
-        const jsonPath = path.join(metadataDir, `meta_${safeIdCaratula}_${job.id}.json`);
+        // 2. Dividir el PDF
+        console.log(`[WORKER] Procesando — ${logId}`);
+        const resultado = await dividirPdf(filePath, job.id, carpetaDestino, metadatos);
 
-        await fs.writeJson(jsonPath, {
-            jobId: job.id,
-            timestamp: new Date().toISOString(),
-            originalFileName: fileName,
-            resultMetadata,
-            clienteData: excelMetadata
-        }, { spaces: 2 });
+        // 3. Guardar metadatos locales y notificar éxito
+        const idSof    = construirIdSof(metadatos);
+        const rutaJson = await guardarMetadatosLocales(idSof, job.id, fileName, resultado, metadatos);
 
-        // 7. FINALIZACIÓN
-        await updateSheetRow(excelMetadata.rowNumber, "maestro", "Estado_Carga", `FINALIZADO EXITOSA | Ticket: tic-${job.id}`);
-        await updateSheetRow(2, "monitoreo", "Ticket_procesados", job.id);
-
+        await encolarEstado(metadatos.rowNumber, `PROCESO FINALIZADO | ID_SOF: ${idSof}`);
         await fs.remove(filePath);
-        console.log(`INFO: WORKER_SUCCESS - ${logId}`);
 
-        return { status: 'success', path: jsonPath };
+        console.log(`[WORKER] Éxito — ${logId}`);
+        return { status: "success", path: rutaJson };
 
     } catch (err) {
-        console.error(`ERROR: WORKER_FAILED - ${logId} | Msg: ${err.message}`);
+        const intento = job.attemptsMade + 1;
+        console.error(`[WORKER] Fallo — ${logId} | Intento ${intento}/${maxIntentos}: ${err.message}`);
 
-        try {
-            if (await fs.pathExists(filePath)) {
-                const fileBuffer = await fs.readFile(filePath);
-                await uploadToDrive(fileName, fileBuffer, SYSTEM_FOLDERS.ERRORES);
-
-                // Solo intentamos actualizar el Excel si logramos obtener la metadata antes del error
-                if (excelMetadata?.rowNumber) {
-                    await updateSheetRow(
-                        excelMetadata.rowNumber,
-                        "maestro",
-                        "Estado_Carga",
-                        `Error: ${err.message.substring(0, 100)}` // Evitar textos gigantes en Excel
-                    );
-                }
-                await fs.remove(filePath);
-            }
-        } catch (recoveryErr) {
-            console.error(`CRITICAL: RECOVERY_FAILED - ${recoveryErr.message}`);
+        // PDF sin separadores QR → no tiene sentido reintentar
+        if (err.message === "NO_CATEGORIES_FOUND") {
+            await encolarEstado(metadatos.rowNumber, "PDF sin separadores válidos");
+            await moverADriveErrores(filePath, fileName);
+            return { status: "failed_no_categories" };
         }
 
-        // Lanzamos el error para que BullMQ gestione los reintentos
+        if (esIntentoFinal) {
+            await moverADriveErrores(filePath, fileName);
+            await encolarEstado(metadatos.rowNumber, `Error definitivo: ${err.message.substring(0, 100)}`);
+        } else {
+            const motivo = err.message.includes("hang up") ? "Conexión saturada" : "Error de red";
+            await encolarEstado(metadatos.rowNumber, `Reintentando (${motivo}) ${intento}/${maxIntentos}...`);
+        }
+
         throw err;
     }
 };
 
-const worker = new Worker("splitQueue", processor, {
+// ─── Worker ───────────────────────────────────────────────────────────────────
+
+const worker = new Worker("splitQueue", procesador, {
     connection,
-    concurrency: 3,
-    lockDuration: 900000,
-    removeOnComplete: { count: 100 },
-    removeOnFail: { count: 50 }
+    concurrency: 2,
+    lockDuration: 900_000,
+    removeOnComplete: { count: 700 },
+    removeOnFail:     { count: 100 },
 });
 
-// --- MANEJO DE EVENTOS ---
-worker.on('failed', (job, err) => {
-    console.error(`ERROR: JOB_TERMINATED - Ticket: ${job?.id} | Failure: ${err.message}`);
-});
+worker.on("failed", (job, err) =>
+    console.error(`[BULLMQ] Job fallido — Ticket: ${job?.id} | ${err.message}`)
+);
+worker.on("error", (err) =>
+    console.error(`[BULLMQ] Error Redis — ${err.message}`)
+);
 
-worker.on('error', err => {
-    console.error(`CRITICAL: REDIS_CONNECTION_LOST - ${err.message}`);
-});
+// ─── Apagado limpio ───────────────────────────────────────────────────────────
 
-// --- LÓGICA DE CIERRE
-const gracefulShutdown = async (signal) => {
-    await worker.close();
+let apagando = false;
 
-    console.log(" Worker cerrado. Proceso finalizado.");
+const apagarLimpiamente = async (señal) => {
+    if (apagando) return;
+    apagando = true;
+    console.log(`\n[WORKER] Señal ${señal} — cerrando...`);
+    try {
+        await worker.close();
+        console.log("[WORKER] Cerrado limpiamente.");
+    } catch (err) {
+        console.error(`[WORKER] Error al cerrar: ${err.message}`);
+    }
     process.exit(0);
 };
 
-// Capturar señales de PM2, Docker o sistema operativo
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => apagarLimpiamente("SIGTERM"));
+process.on("SIGINT",  () => apagarLimpiamente("SIGINT"));

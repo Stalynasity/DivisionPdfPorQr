@@ -14,20 +14,20 @@ async function runTest() {
         const data = await getDataFromExcel(idAProbar);
 
         if (data) {
-            console.log("✅ ID ENCONTRADO:");
+            console.log("ID ENCONTRADO:");
             console.table(data);
 
             // 2. Prueba de Escritura
-            console.log(`✍️ Intentando actualizar estado en la fila ${data.rowNumber}...`);
+            console.log(`Intentando actualizar estado en la fila ${data.rowNumber}...`);
             await updateSheetRow(data.rowNumber, "maestro", "ESTADO_CARGA", "TEST_EXITOSO");
             
-            console.log("✅ PROCESO COMPLETADO: Revisa tu Google Sheet, la columna 'Estado' debería decir 'TEST_EXITOSO'.");
+            console.log("PROCESO COMPLETADO: Revisa tu Google Sheet, la columna 'Estado' debería decir 'TEST_EXITOSO'.");
         } else {
-            console.error("❌ El ID no existe en el archivo. Verifica que esté en la columna 'ID_Caratula'.");
+            console.error("El ID no existe en el archivo. Verifica que esté en la columna 'ID_Caratula'.");
         }
 
     } catch (error) {
-        console.error("💥 ERROR DURANTE EL TEST:", error.message);
+        console.error("ERROR DURANTE EL TEST:", error.message);
     }
 }
 

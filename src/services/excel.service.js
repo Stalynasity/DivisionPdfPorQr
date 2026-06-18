@@ -1,169 +1,320 @@
 import { google } from "googleapis";
-import { getOAuthClient } from "./auth.oauth.js";
+import { getOAuthClient } from "./auth.service.js";
+import Redis from "ioredis";
+import { connection } from "../config/redis.js";
+import { respaldarArchivo } from "./drive.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const SPREADSHEET_ID = process.env.EXCEL_DIGITALIZACION;
-const SPREADSHEET_ID_MONITOREO = process.env.EXCEL_MONITOREO_ID;
-const SHEET_NAME_MAESTRO = process.env.SHEET_NAME_MAESTRO;
+// ─── Clientes ─────────────────────────────────────────────────────────────────
 
-let sheetsInstance;
+const redis = new Redis(connection);
 
-const getSheetsClient = async () => {
-    if (!sheetsInstance) {
+let clienteSheets;
+const obtenerClienteSheets = async () => {
+    if (!clienteSheets) {
         const auth = await getOAuthClient();
-        sheetsInstance = google.sheets({ version: "v4", auth });
+        clienteSheets = google.sheets({ version: "v4", auth });
     }
-    return sheetsInstance;
+    return clienteSheets;
 };
 
+// ─── Constantes ───────────────────────────────────────────────────────────────
+
+const SPREADSHEET_ID = process.env.EXCEL_DIGITALIZACION;
+const HOJA_MAESTRO = process.env.SHEET_NAME_MAESTRO;
+const HOJA_DRIVE = process.env.SHEET_NAME_DRIVE ?? "Archivos_Drive";
+
+const CLAVE_ESTADO = "excel_status_buffer";
+const PREFIJO_BATCH = "excel_buffer:";
+const CLAVE_MANTENIMIENTO = "system:maintenance_mode";
+
+const CONFIG_TABLAS = {
+    maestro: { id: SPREADSHEET_ID, hoja: HOJA_MAESTRO },
+    monitoreo: { id: process.env.EXCEL_MONITOREO_ID, hoja: process.env.SHEET_NAME_MONITOREO },
+};
+
+const DIAS_EN_MS = (d) => d * 24 * 60 * 60 * 1000;
+
+// ─── Helpers privados ─────────────────────────────────────────────────────────
+
+/** Convierte un índice de columna 0-based a su letra (0 → A, 26 → AA). */
+const indiceALetra = (indice) => {
+    let letra = "";
+    let i = indice;
+    while (i >= 0) {
+        letra = String.fromCharCode(65 + (i % 26)) + letra;
+        i = Math.floor(i / 26) - 1;
+    }
+    return letra;
+};
+
+/** Busca una columna por nombre en la cabecera y devuelve su letra. */
+const resolverLetraColumna = async (spreadsheetId, nombreHoja, nombreColumna) => {
+    const sheets = await obtenerClienteSheets();
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${nombreHoja}!1:1` });
+    const cabecera = res.data.values?.[0] ?? [];
+    const idx = cabecera.indexOf(nombreColumna);
+
+    if (idx === -1) throw new Error(`COLUMNA_NO_ENCONTRADA: "${nombreColumna}" en "${nombreHoja}"`);
+    return indiceALetra(idx);
+};
+
+/** Vacía una hoja y la reescribe por bloques de 5000 filas. */
+const reescribirHoja = async (spreadsheetId, nombreHoja, filas) => {
+    const sheets = await obtenerClienteSheets();
+    const BLOQUE = 5_000;
+
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: nombreHoja });
+
+    for (let i = 0; i < filas.length; i += BLOQUE) {
+        await sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `${nombreHoja}!A${i + 1}`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: filas.slice(i, i + BLOQUE) },
+        });
+    }
+};
+
+/** Parsea "YYYY-MM-DD HH:MM:SS" o "DD/MM/YYYY HH:MM:SS" → Date | null. */
+const parsearFecha = (raw) => {
+    if (!raw || typeof raw !== "string") return null;
+    try {
+        const [parteDate, parteTime = "00:00:00"] = raw.trim().split(" ");
+        let dia, mes, anio;
+
+        if (parteDate.includes("-")) [anio, mes, dia] = parteDate.split("-").map(Number);
+        else if (parteDate.includes("/")) [dia, mes, anio] = parteDate.split("/").map(Number);
+        else return null;
+
+        const [h, m, s] = parteTime.split(":").map(Number);
+        const fecha = new Date(anio, mes - 1, dia, h, m, s);
+        return isNaN(fecha.getTime()) ? null : fecha;
+    } catch {
+        return null;
+    }
+};
+
+/** Resuelve el spreadsheetId de una App desde las variables de entorno. */
+const obtenerIdHojaApp = (appAsignada) => {
+    const clave = `${appAsignada.replace("-", "")}_EXCEL_ARCHIVOS_DRIVE_ID`;
+    const id = process.env[clave];
+    if (!id) throw new Error(`APP_NO_CONFIGURADA: ${appAsignada} (falta ${clave})`);
+    return id;
+};
+
+// ─── Modo mantenimiento ───────────────────────────────────────────────────────
+
+export const activarMantenimientoRedis = async (valor) => {
+    await redis.set(CLAVE_MANTENIMIENTO, valor ? "true" : "false");
+    console.log(`[REDIS] Mantenimiento: ${valor ? "ACTIVADO" : "DESACTIVADO"}`);
+};
+
+export const estaEnMantenimiento = async () =>
+    (await redis.get(CLAVE_MANTENIMIENTO)) === "true";
+
+// ─── Colas Redis ──────────────────────────────────────────────────────────────
+
+/** Encola una actualización de celda genérica (cualquier columna). */
+export const encolarActualizacionCelda = async (numeroFila, nombreColumna, valor) => {
+    if (!numeroFila) return;
+    await redis.rpush(CLAVE_ESTADO, JSON.stringify({ rowNumber: numeroFila, columnName: nombreColumna, value: valor }));
+};
+
+/** Encola una actualización de Estado_Carga específicamente. */
+export const encolarEstado = (numeroFila, valor) =>
+    encolarActualizacionCelda(numeroFila, "Estado_Carga", valor);
+
+/** Encola filas de documentos para inserción masiva en el próximo ciclo batch. */
+export const encolarFilasDocumentos = async (filas, appAsignada) => {
+    if (!filas?.length) return;
+    const pipeline = redis.pipeline();
+    filas.forEach((fila) => pipeline.rpush(`${PREFIJO_BATCH}${appAsignada}`, JSON.stringify(fila)));
+    await pipeline.exec();
+    console.log(`[REDIS] ${filas.length} filas encoladas para ${appAsignada}`);
+};
+
+// ─── Google Sheets: Lectura ───────────────────────────────────────────────────
+
 /**
- * Inserta filas con lógica de Exponential Backoff (Resiliencia SRE)
+ * Busca una fila en el Maestro por ID_Caratula.
+ * @returns {object|null} Objeto con los headers como claves + { rowNumber }
  */
-export const insertDocumentRowsBatch = async (rowsArray, App_asignada, retries = 3, delay = 2000) => {
-    const batchSize = rowsArray?.length || 0;
-    if (batchSize === 0) return;
+export const buscarFilaEnMaestro = async (idBusqueda) => {
+    const sheets = await obtenerClienteSheets();
+    const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${HOJA_MAESTRO}!A:AZ`,
+    });
 
-    for (let i = 0; i < retries; i++) {
+    const filas = res.data.values;
+    if (!filas?.length) return null;
+
+    const cabecera = filas[0];
+    const idxColId = cabecera.indexOf("ID_Caratula");
+    const idLimpio = String(idBusqueda).trim().toLowerCase();
+
+    const idxFila = filas.findIndex(
+        (fila, i) => i > 0 && String(fila[idxColId] ?? "").trim().toLowerCase() === idLimpio
+    );
+
+    if (idxFila === -1) return null;
+
+    return cabecera.reduce(
+        (acc, col, i) => { acc[col] = filas[idxFila][i] ?? ""; return acc; },
+        { rowNumber: idxFila + 1 }
+    );
+};
+
+// ─── Google Sheets: Escritura ─────────────────────────────────────────────────
+
+/** Inserta filas en el Excel de una App con reintentos exponenciales ante cuotas. */
+export const insertarFilasEnLote = async (filas, appAsignada) => {
+    if (!filas?.length) return;
+
+    const sheets = await obtenerClienteSheets();
+    const spreadsheetId = obtenerIdHojaApp(appAsignada);
+    const MAX_INTENTOS = 3;
+    let espera = 2_000;
+
+    for (let intento = 0; intento < MAX_INTENTOS; intento++) {
         try {
-            const sheets = await getSheetsClient();
-            
-            // Mapeo dinámico de IDs (O - Open/Closed Principle)
-            const apps = {
-                "APP-1": process.env.APP1_EXCEL_ARCHIVOS_DRIVE_ID,
-                "APP-2": process.env.APP2_EXCEL_ARCHIVOS_DRIVE_ID,
-                "APP-3": process.env.APP3_EXCEL_ARCHIVOS_DRIVE_ID,
-                "APP-4": process.env.APP4_EXCEL_ARCHIVOS_DRIVE_ID,
-                "APP-5": process.env.APP5_EXCEL_ARCHIVOS_DRIVE_ID,
-                "APP-6": process.env.APP6_EXCEL_ARCHIVOS_DRIVE_ID,
-            };
-
-            const spreadsheetId = apps[App_asignada];
-            if (!spreadsheetId) throw new Error(`APP_NOT_CONFIGURED: ${App_asignada}`);
-
-            const sheetName = process.env.SHEET_NAME_DRIVE || "Archivos_Drive";
-
-            const response = await sheets.spreadsheets.values.append({
+            await sheets.spreadsheets.values.append({
                 spreadsheetId,
-                range: `${sheetName}!A:G`,
+                range: `${HOJA_DRIVE}!A:G`,
                 valueInputOption: "USER_ENTERED",
-                requestBody: { values: rowsArray }
+                requestBody: { values: filas },
             });
-
             return;
-
-        } catch (error) {
-            const isRateLimit = error.code === 429 || error.message.includes('quota');
-            if (isRateLimit && i < retries - 1) {
-                console.warn(`WARN: SHEETS_QUOTA_HIT - Reintentando en ${delay/1000}s (Intento ${i+1})`);
-                await new Promise(res => setTimeout(res, delay));
-                delay *= 2;
+        } catch (err) {
+            const esQuota = err.code === 429 || err.message?.includes("quota");
+            if (esQuota && intento < MAX_INTENTOS - 1) {
+                console.warn(`[SHEETS] Cuota alcanzada — reintentando en ${espera / 1000}s (${intento + 1}/${MAX_INTENTOS})`);
+                await new Promise((r) => setTimeout(r, espera));
+                espera *= 2;
             } else {
-                console.error(`ERROR: SHEETS_APPEND_FAILED - App: ${App_asignada} | Msg: ${error.message}`);
-                throw error;
+                throw err;
             }
         }
     }
 };
 
-/**
- * Recupera datos de una fila específica (Single Responsibility)
- */
-export const getDataFromExcel = async (idBusqueda) => {
-    try {
-        const sheets = await getSheetsClient();
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME_MAESTRO}!A:AZ`,
-        });
+/** Actualiza un lote de celdas en una misma columna con una sola llamada a la API. */
+export const actualizarCeldasEnLote = async (actualizaciones, tabla, nombreColumna) => {
+    if (!actualizaciones?.length) return;
 
-        const rows = response.data.values;
-        if (!rows || rows.length === 0) return null;
+    const config = CONFIG_TABLAS[tabla];
+    if (!config) throw new Error(`TABLA_INVALIDA: ${tabla}`);
 
-        const headers = rows[0];
-        const idColIndex = headers.indexOf("ID_Caratula");
-        const cleanId = String(idBusqueda).trim().toLowerCase();
+    const sheets = await obtenerClienteSheets();
+    const letra = await resolverLetraColumna(config.id, config.hoja, nombreColumna);
 
-        const rowIndex = rows.findIndex((row, idx) => 
-            idx > 0 && String(row[idColIndex] ?? "").trim().toLowerCase() === cleanId
-        );
-
-        if (rowIndex === -1) return null;
-
-        const result = headers.reduce((acc, header, index) => {
-            acc[header] = rows[rowIndex][index] || "";
-            return acc;
-        }, { rowNumber: rowIndex + 1 });
-
-        return result;
-    } catch (error) {
-        console.error(`ERROR: SHEETS_FETCH_FAILED - ID: ${idBusqueda} | Msg: ${error.message}`);
-        throw error;
-    }
-};
-
-/**
- * Actualiza una celda con mapeo automático de columnas
- */
-export const updateSheetRow = async (rowNumber, Tabla, columnName, value) => {
-    try {
-        const config = {
-            monitoreo: { id: SPREADSHEET_ID_MONITOREO, sheet: process.env.SHEET_NAME_MONITOREO },
-            maestro: { id: SPREADSHEET_ID, sheet: SHEET_NAME_MAESTRO }
-        };
-
-        const target = config[Tabla];
-        if (!target) throw new Error(`INVALID_TABLE: ${Tabla}`);
-
-        const sheets = await getSheetsClient();
-        
-        // Obtener encabezados para hallar la columna
-        const headerRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: target.id,
-            range: `${target.sheet}!1:1`,
-        });
-
-        const headers = headerRes.data.values?.[0] || [];
-        const colIndex = headers.indexOf(columnName);
-        if (colIndex === -1) throw new Error(`COLUMN_NOT_FOUND: ${columnName}`);
-
-        const colLetter = String.fromCharCode(65 + colIndex);
-        const range = `${target.sheet}!${colLetter}${rowNumber}`;
-
-        await sheets.spreadsheets.values.update({
-            spreadsheetId: target.id,
-            range: range,
+    await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: config.id,
+        requestBody: {
             valueInputOption: "USER_ENTERED",
-            requestBody: { values: [[value]] }
-        });
-
-
-    } catch (error) {
-        console.error(`ERROR: SHEETS_UPDATE_FAILED - Table: ${Tabla} | Col: ${columnName} | Msg: ${error.message}`);
-        throw error;
-    }
+            data: actualizaciones.map((u) => ({
+                range: `${config.hoja}!${letra}${u.rowNumber}`,
+                values: [[u.value]],
+            })),
+        },
+    });
 };
 
-/**
- * Verificación rápida de existencia
- */
-export const existsIdCaratula = async (idBusqueda) => {
-    try {
-        const sheets = await getSheetsClient();
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME_MAESTRO}!A:A`,
-        });
+// ─── Mantenimiento: Limpieza ──────────────────────────────────────────────────
 
-        const rows = response.data.values || [];
-        const cleanId = String(idBusqueda).trim().toLowerCase();
+/** Elimina filas antiguas del Maestro según reglas de negocio. */
+export const limpiarFilasAntiguas = async () => {
+    const sheets = await obtenerClienteSheets();
+    const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${HOJA_MAESTRO}!A:AZ`,
+    });
 
-        const rowIndex = rows.findIndex(row => String(row[0] ?? "").trim().toLowerCase() === cleanId);
-        return rowIndex !== -1 ? rowIndex + 1 : null;
+    const filas = res.data.values;
+    if (!filas || filas.length <= 1) return;
 
-    } catch (error) {
-        console.error(`ERROR: SHEETS_CHECK_FAILED - Msg: ${error.message}`);
-        return null;
+    const cab = filas[0];
+    const idxFecha = cab.indexOf("Fecha_creacion");
+    const idxId = cab.indexOf("ID_Caratula");
+    const idxEstado = cab.indexOf("Estado_Carga");
+    const hoy = new Date();
+
+    const conservadas = filas.filter((fila, i) => {
+        if (i === 0) return true;
+        if (!String(fila[idxId] ?? "").trim()) return false;
+
+        const fecha = parsearFecha(fila[idxFecha]);
+        if (!fecha) return true;
+
+        const limite = String(fila[idxEstado] ?? "").includes("CARATULA CREADA")
+            ? DIAS_EN_MS(21)
+            : DIAS_EN_MS(30);
+
+        return (hoy - fecha) < limite;
+    });
+
+    if (conservadas.length === filas.length) return;
+
+    await reescribirHoja(SPREADSHEET_ID, HOJA_MAESTRO, conservadas);
+    console.log(`[LIMPIEZA] Maestro: ${filas.length} → ${conservadas.length} filas.`);
+};
+
+/** Elimina filas antiguas de los Excels de cada App (descubiertos desde .env). */
+export const limpiarExcelsDeApps = async () => {
+    const sheets = await obtenerClienteSheets();
+    const hoy = new Date();
+    const limite = DIAS_EN_MS(21);
+
+    const appsConfiguradas = Object.entries(process.env).filter(([k]) =>
+        /^APP\d+_EXCEL_ARCHIVOS_DRIVE_ID$/.test(k)
+    );
+
+    for (const [clave, spreadsheetId] of appsConfiguradas) {
+        try {
+            console.log(`\n[LIMPIEZA-APPS] ${clave}...`);
+
+            const res = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range: `${HOJA_DRIVE}!A:Z`,
+            });
+
+            const filas = res.data.values;
+            if (!filas || filas.length <= 1) { console.log("[SKIP] Sin datos."); continue; }
+
+            const idxFecha = filas[0].indexOf("FECHA_CREACION");
+            if (idxFecha === -1) {
+                console.warn(`[WARN] Sin columna FECHA_CREACION en ${clave}.`);
+                continue;
+            }
+
+            const conservadas = filas.filter((fila, i) => {
+                if (i === 0) return true;
+                const fecha = parsearFecha(fila[idxFecha]);
+                if (!fecha) return true;
+                return (hoy - fecha) <= limite;
+            });
+
+            // Guardia antiborrado masivo: si solo queda el header con muchos datos originales,
+            // probablemente el formato de fecha cambió en Google Sheets
+            if (conservadas.length === 1 && filas.length > 5) {
+                console.error(`[!] ABORTADO: posible borrado masivo en ${clave}. Revise el formato de fecha.`);
+                continue;
+            }
+
+            if (conservadas.length === filas.length) {
+                console.log(`[INFO] Sin filas antiguas en ${clave}.`);
+                continue;
+            }
+
+            await respaldarArchivo(spreadsheetId, "BACKUPS_ARCHIVOS_DRIVE");
+            await reescribirHoja(spreadsheetId, HOJA_DRIVE, conservadas);
+            console.log(`[LIMPIEZA] ${clave}: ${filas.length} → ${conservadas.length} filas.`);
+
+        } catch (err) {
+            console.error(`[ERROR] ${clave}: ${err.message}`);
+        }
     }
 };

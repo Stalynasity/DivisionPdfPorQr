@@ -1,140 +1,213 @@
-import { google } from "googleapis";
-import { getOAuthClient } from "./auth.oauth.js";
 import fs from "fs/promises";
 import path from "path";
+import { google } from "googleapis";
+import { getOAuthClient } from "./auth.service.js";
+import redisGmail from "../config/redisGmail.js";
 import dotenv from "dotenv";
+
 dotenv.config();
 
-// Carpeta local donde se guardarán los PDFs (ej: './descargas' o '/app/data')
-const CARPETA_LOCAL_DESTINO = process.env.PATH_ENTRADA_LOCAL;
-const NOMBRE_ETIQUETA = "PROCESADO_IDXA";
-const ETIQUETA_SIN_PDF = "ERROR_SIN_PDF";
+const DESTINO = process.env.PATH_ENTRADA_LOCAL;
+const LABEL_OK = "PROCESADO_IDXA";
+const LABEL_ERROR = "ERROR_SIN_PDF";
+const QUERY_UNREAD = `subject:("[IDX] INDEXACION_AUTOMATICA_APP -") is:unread -label:${LABEL_OK}`;
+const REDIS_PREFIX = "gmail:msg:";
+const REDIS_TTL = 60 * 60 * 24 * 7; // 7 días
 
-function buscarPdfsEnPartes(parts, allPdfs = []) {
-    for (const part of parts) {
-        if (part.parts) {
-            buscarPdfsEnPartes(part.parts, allPdfs);
-        } else if (part.filename && part.filename.toLowerCase().endsWith('.pdf')) {
-            allPdfs.push(part);
-        }
-    }
-    return allPdfs;
-}
-
-export const descargarFacturasEmail = async () => {
-    const auth = await getOAuthClient();
-    const gmail = google.gmail({ version: 'v1', auth });
-
-    try {
-        // Aseguramos que la carpeta local exista
-        await fs.mkdir(CARPETA_LOCAL_DESTINO, { recursive: true });
-
-        const res = await gmail.users.messages.list({
-            userId: 'me',
-            // Usamos comillas dobles para forzar la frase exacta
-            q: `subject:"[IDX] INDEXACION_AUTOMATICA_APP - alternativa" is:unread -label:${NOMBRE_ETIQUETA} -label:${ETIQUETA_SIN_PDF}`
-        });
-
-        const messages = res.data.messages || [];
-        if (messages.length > 0) console.log(`INFO: GMAIL - Analizando ${messages.length} mensaje(s).`);
-
-        for (const msgInfo of messages) {
-            const msg = await gmail.users.messages.get({ userId: 'me', id: msgInfo.id });
-            const todasLasPartes = msg.data.payload.parts ? buscarPdfsEnPartes(msg.data.payload.parts) : [];
-
-            if (todasLasPartes.length === 0) {
-                console.warn(`WARN: GMAIL - Mensaje ${msgInfo.id} sin PDFs. Archivando...`);
-                await marcarComoProcesado(gmail, msgInfo.id, ETIQUETA_SIN_PDF);
-                continue;
-            }
-
-            let pdfsGuardadosCount = 0;
-
-            for (const part of todasLasPartes) {
-                const attachmentId = part.body.attachmentId;
-                if (!attachmentId) continue;
-
-                try {
-                    const attach = await gmail.users.messages.attachments.get({
-                        userId: 'me', messageId: msgInfo.id, id: attachmentId
-                    });
-
-                    const fileBuffer = Buffer.from(attach.data.data, 'base64url');
-
-                    // Definimos la ruta completa del archivo
-                    // Agregamos un timestamp al nombre para evitar sobrescribir archivos con el mismo nombre
-                    const fileName = `${Date.now()}_${part.filename}`;
-                    const filePath = path.join(CARPETA_LOCAL_DESTINO, fileName);
-
-                    // Guardado local
-                    await fs.writeFile(filePath, fileBuffer);
-
-                    console.log(`INFO: LOCAL_SAVE - Guardado: ${fileName}`);
-                    pdfsGuardadosCount++;
-                } catch (errAttach) {
-                    console.error(`ERROR: FS_WRITE - ${part.filename}: ${errAttach.message}`);
-                }
-            }
-
-            if (pdfsGuardadosCount > 0) {
-                await enviarRespuesta(gmail, msg.data);
-                await marcarComoProcesado(gmail, msgInfo.id, NOMBRE_ETIQUETA);
-                console.log(`INFO: SUCCESS - Mensaje ${msgInfo.id} finalizado.`);
-            }
-        }
-    } catch (error) {
-        console.error("CRITICAL: GMAIL_SERVICE -", error.message);
-    }
+const mensajeYaProcesado = async (messageId) => {
+    const val = await redisGmail.get(REDIS_PREFIX + messageId);
+    return val !== null;
 };
 
-async function marcarComoProcesado(gmail, messageId, labelName) {
-    const labelId = await getOrCreateLabel(gmail, labelName);
+// Cambiar 'threadId' por 'messageId'
+const marcarMensajeProcesado = async (messageId) => {
+    await redisGmail.set(REDIS_PREFIX + messageId, "1", "EX", REDIS_TTL);
+};
+
+// ─── Helpers privados ─────────────────────────────────────────────────────────
+
+/** Extrae recursivamente todas las partes adjuntas que sean PDF. */
+const findPdfParts = (parts = []) => {
+    const pdfs = [];
+    for (const part of parts) {
+        if (part.parts) findPdfParts(part.parts).forEach(p => pdfs.push(p));
+        else if (part.filename?.toLowerCase().endsWith(".pdf")) pdfs.push(part);
+    }
+    return pdfs;
+};
+
+/** Obtiene el valor de un header del mensaje por nombre. */
+const getHeader = (msg, name) =>
+    msg.payload.headers.find((h) => h.name === name)?.value ?? "";
+
+/** Extrae el prefijo del remitente (la parte antes del @). */
+const senderPrefix = (from) =>
+    from.match(/([a-zA-Z0-9._-]+)@/)?.[1] ?? "usuario_desconocido";
+
+/** Resuelve o crea una etiqueta Gmail por nombre. */
+const resolveLabel = async (gmail, name) => {
+    const { data } = await gmail.users.labels.list({ userId: "me" });
+    const found = data.labels.find((l) => l.name === name);
+    if (found) return found.id;
+
+    const created = await gmail.users.labels.create({
+        userId: "me",
+        requestBody: { name, labelListVisibility: "labelShow", messageListVisibility: "show" },
+    });
+    return created.data.id;
+};
+
+/** Mueve el mensaje a la etiqueta indicada y lo saca del INBOX. */
+const archiveWithLabel = async (gmail, messageId, labelName) => {
+    const labelId = await resolveLabel(gmail, labelName);
     await gmail.users.messages.batchModify({
-        userId: 'me',
+        userId: "me",
         ids: [messageId],
-        removeLabelIds: ['UNREAD', 'INBOX'],
-        addLabelIds: [labelId]
+        removeLabelIds: ["UNREAD", "INBOX"],
+        addLabelIds: [labelId],
     });
-}
+};
 
-async function getOrCreateLabel(gmail, name) {
-    const res = await gmail.users.labels.list({ userId: 'me' });
-    const label = res.data.labels.find(l => l.name === name);
-    if (label) return label.id;
+/**
+ * Construye y envía un email de respuesta en el mismo hilo.
+ * @param {string} cuerpoHTML - HTML del cuerpo del mensaje
+ */
+const sendReply = async (gmail, originalMsg, cuerpoHTML) => {
+    const from = getHeader(originalMsg, "From");
+    const subject = getHeader(originalMsg, "Subject");
 
-    const newLabel = await gmail.users.labels.create({
-        userId: 'me',
-        requestBody: { name, labelListVisibility: 'labelShow', messageListVisibility: 'show' }
+    const raw = [
+        `To: ${from}`,
+        `Subject: Re: ${subject}`,
+        `In-Reply-To: ${originalMsg.id}`,
+        `References: ${originalMsg.id}`,
+        `Content-Type: text/html; charset=utf-8`,
+        `MIME-Version: 1.0`,
+        "",
+        cuerpoHTML,
+    ].join("\r\n");
+
+    const encoded = Buffer.from(raw).toString("base64")
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    await gmail.users.messages.send({
+        userId: "me",
+        requestBody: { raw: encoded, threadId: originalMsg.threadId },
     });
-    return newLabel.data.id;
-}
+};
 
-async function enviarRespuesta(gmail, originalMsg) {
-    const threadId = originalMsg.threadId;
-    const subject = originalMsg.payload.headers.find(h => h.name === 'Subject')?.value;
-    const from = originalMsg.payload.headers.find(h => h.name === 'From')?.value;
+// ─── Plantillas de respuesta ──────────────────────────────────────────────────
 
-    const cuerpoHTML = `
-    <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; border: 1px solid #eee; padding: 20px; border-radius: 8px;">
-      <h2 style="color: #1a73e8; margin-top: 0;">Confirmación de Recepción</h2>
-      <p>Se ha recibido y guardado correctamente el archivo PDF para el proceso de <strong>Indexación Automática</strong>.</p>
-      <div style="background-color: #fff4e5; border-left: 4px solid #ff9800; padding: 10px 15px; margin: 20px 0;">
-        <strong>Validación de Calidad:</strong><br>
-        Por favor, asegúrese de que el PDF escaneado contenga el orden correcto: 
-        <br><em>Carátula + Separador + Contenido...</em>.
-      </div>
-      <p>El documento ha sido puesto en cola para su procesamiento.</p>
-      <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-      <p style="font-size: 11px; color: #888;">Sistema Automatizado de Digitalización | No responder a este correo.</p>
-    </div>
-  `;
+const HTML_OK = `
+<div style="font-family:sans-serif;color:#333;line-height:1.6;max-width:600px;border:1px solid #eee;padding:20px;border-radius:8px">
+  <h2 style="color:#1a73e8;margin-top:0">Confirmación de Recepción</h2>
+  <p>Se recibió y guardó correctamente el PDF para el proceso de <strong>Indexación Automática</strong>.</p>
+  <div style="background:#fff4e5;border-left:4px solid #ff9800;padding:10px 15px;margin:20px 0">
+    <strong>Validación de Calidad:</strong><br>
+    Asegúrese de que el PDF tenga el orden correcto: <em>Carátula + Separador + Contenido…</em>
+  </div>
+  <p>El documento está en cola para su procesamiento.</p>
+  <hr style="border:0;border-top:1px solid #eee;margin:20px 0">
+  <p style="font-size:11px;color:#888">Sistema Automatizado de Digitalización | No responder.</p>
+</div>`;
 
-    const str = [
-        `To: ${from}`, `Subject: Re: ${subject}`,
-        `In-Reply-To: ${originalMsg.id}`, `References: ${originalMsg.id}`,
-        `Content-Type: text/html; charset=utf-8`, `MIME-Version: 1.0`, '', cuerpoHTML
-    ].join('\r\n');
+const HTML_ERROR = `
+<div style="font-family:sans-serif;color:#333;line-height:1.6;max-width:600px;border:1px solid #eee;padding:20px;border-radius:8px">
+  <h2 style="color:#d32f2f;margin-top:0">Error en la Recepción del Documento</h2>
+  <p>Estimado usuario,</p>
+  <p><strong>No se pudo recibir ni procesar su documento.</strong></p>
+  <div style="background:#ffebee;border-left:4px solid #f44336;padding:10px 15px;margin:20px 0">
+    <strong>Atención requerida:</strong><br>
+    Revise que el correo tenga el PDF adjunto y que el archivo no esté corrupto.
+  </div>
+  <p>Por favor, vuelva a enviar el documento corregido.</p>
+  <hr style="border:0;border-top:1px solid #eee;margin:20px 0">
+  <p style="font-size:11px;color:#888">Sistema Automatizado de Digitalización | No responder.</p>
+</div>`;
 
-    const encodedMail = Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encodedMail, threadId } });
-}
+// ─── Función principal ────────────────────────────────────────────────────────
+
+export const descargaPDFEmail = async () => {
+    const auth = await getOAuthClient();
+    const gmail = google.gmail({ version: "v1", auth });
+
+    await fs.mkdir(DESTINO, { recursive: true });
+
+    const { data } = await gmail.users.messages.list({ userId: "me", q: QUERY_UNREAD });
+    const messages = data.messages ?? [];
+
+    if (!messages.length) return;
+
+    // FIX #2 — obtener internalDate y ordenar cronológicamente antes de procesar
+    const mensajesConFecha = await Promise.all(
+        messages.map(async ({ id, threadId }) => {
+            const { data: meta } = await gmail.users.messages.get({
+                userId: "me", id, format: "metadata",
+                metadataHeaders: ["From", "Subject"],
+            });
+            return { id, threadId, internalDate: Number(meta.internalDate) };
+        })
+    );
+    mensajesConFecha.sort((a, b) => a.internalDate - b.internalDate);
+
+    console.log(`[GMAIL] ${mensajesConFecha.length} mensaje(s) pendientes.`);
+
+    for (const { id, threadId } of mensajesConFecha) {
+
+        // FIX #1 CORREGIDO: Usar el ID del mensaje, no del hilo
+        if (await mensajeYaProcesado(id)) {
+            console.warn(`[GMAIL] Mensaje ${id} omitido — mensaje ya procesado (Redis).`);
+            await archiveWithLabel(gmail, id, LABEL_OK);
+            continue;
+        }
+
+        const { data: msg } = await gmail.users.messages.get({ userId: "me", id });
+        const prefix = senderPrefix(getHeader(msg, "From"));
+        const pdfParts = findPdfParts(msg.payload.parts ?? []);
+
+        if (!pdfParts.length) {
+            console.warn(`[GMAIL] Mensaje ${id} sin PDFs.`);
+            await sendReply(gmail, msg, HTML_ERROR);
+            await archiveWithLabel(gmail, id, LABEL_ERROR);
+            continue;
+        }
+
+        let saved = 0;
+        let failed = 0;
+
+        for (const part of pdfParts) {
+            // FIX #3 — contar adjuntos sin ID como fallo en vez de ignorarlos
+            if (!part.body?.attachmentId) {
+                console.warn(`[GMAIL] Parte sin attachmentId: ${part.filename}`);
+                failed++;
+                continue;
+            }
+            try {
+                const { data: attach } = await gmail.users.messages.attachments.get({
+                    userId: "me", messageId: id, id: part.body.attachmentId,
+                });
+                const buffer = Buffer.from(attach.data, "base64url");
+                const fileName = `${prefix}-${Date.now()}_${part.filename}`;
+                await fs.writeFile(path.join(DESTINO, fileName), buffer);
+                console.log(`[GMAIL] Guardado: ${fileName}`);
+                saved++;
+            } catch (err) {
+                console.error(`[GMAIL] Error guardando ${part.filename}: ${err.message}`);
+                failed++;
+            }
+        }
+
+        if (saved > 0) {
+            await sendReply(gmail, msg, HTML_OK);
+            await archiveWithLabel(gmail, id, LABEL_OK);
+            
+            // FIX #4 CORREGIDO: Guardar en Redis usando el ID del mensaje
+            await marcarMensajeProcesado(id); 
+            console.log(`[GMAIL] Mensaje ${id} procesado — ${saved} PDF(s) guardados, ${failed} fallidos.`);
+        } else {
+            console.warn(`[GMAIL] Mensaje ${id} — todos los adjuntos fallaron (${failed} errores).`);
+            await sendReply(gmail, msg, HTML_ERROR);
+            await archiveWithLabel(gmail, id, LABEL_ERROR);
+        }
+    }
+};

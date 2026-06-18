@@ -1,11 +1,10 @@
-import { descargarFacturasEmail } from "../services/gmail.service.js";
+import { descargaPDFEmail } from "../services/gmail.service.js";
 
-const INTERVALO_MS = 10000;
+const INTERVALO_MS = 5000;
 
 async function runPoll() {
     try {
-        console.log("INFO: GMAIL_POLL - Ejecutando ciclo de descarga de pdf...");
-        await descargarFacturasEmail();
+        await descargaPDFEmail();
     } catch (error) {
         console.error("ERROR: GMAIL_POLL_JOB -", error.message);
     } finally {
